@@ -88,12 +88,8 @@ def main(args=None):
     rclpy.init(args=args)
     node = BagRecorderNode()
     rclpy.spin(node)
-    
-    if node.process is not None:
-        node.process.send_signal(signal.SIGINT)
-        node.process.wait()
+    node.interrupt()
         
-    time.sleep(1)
     node.destroy_node()
     rclpy.try_shutdown()
 
