@@ -22,7 +22,7 @@ class BagRecorderNode(Node):
         )
 
         self.declare_parameter(
-            "robot_name", "spot1_auto"
+            "robot_name", "spot1"
         )
         
         self.cfg_path = (
