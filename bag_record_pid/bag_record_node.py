@@ -18,7 +18,7 @@ class BagRecorderNode(Node):
         )
 
         self.declare_parameter(
-            "output_dir", str(Path(__file__).parents[3] / "src/bag_record_pid/rosbags/")
+            "output_dir", str(Path(__file__).parents[3] / "src/bag_record_pid/logging/")
         )
 
         self.declare_parameter(
