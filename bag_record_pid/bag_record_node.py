@@ -1,3 +1,4 @@
+
 from rclpy.node import Node
 from pathlib import Path
 from std_msgs.msg import Bool
@@ -7,22 +8,21 @@ import signal
 import time
 import os
 import rclpy
-
+from rclpy.qos import QoSProfile, QoSReliabilityPolicy
+import datetime
 
 class BagRecorderNode(Node):
     def __init__(self):
         super().__init__("bag_record_node")
 
+        self.node_name = self.get_name() # Get the full node name, including namespace if any
+
         self.declare_parameter(
-            "cfg_path", str(Path(__file__).parents[3] / "src/bag_record_pid/cfg.yaml")
+            "cfg_path", str(Path(__file__).parents[3] / "config/cfg.yaml")
         )
 
         self.declare_parameter(
-            "output_dir", str(Path(__file__).parents[3] / "src/bag_record_pid/logging/")
-        )
-
-        self.declare_parameter(
-            "robot_name", "spot1"
+            "output_dir", str("/logging/")
         )
         
         self.cfg_path = (
@@ -32,31 +32,62 @@ class BagRecorderNode(Node):
         self.output_dir = (
             self.get_parameter("output_dir").get_parameter_value().string_value
         )
-        
-        self.robot = (
-            self.get_parameter("robot_name").get_parameter_value().string_value
-        )
 
         self.active = False
         self.cfg = yaml.safe_load(open(self.cfg_path))
 
+        # TODO: check if the output directory exists.
+        # Exit if it does not exist.
         os.chdir(self.output_dir)
 
-        self.commands = ["ros2", "bag", "record", "-s", "mcap"]
+        self.command_prefix = ["ros2", "bag", "record", "-s", "mcap"]
+        self.commands = dict()
         self.add_topics()
 
-        self.process = None
+        self.process = dict()
         
-        self.status_pub = self.create_publisher(Bool, f"/{self.robot}/bag_recording_status", 10)
+        # Create QoS profile for reliable communication
+        reliable_qos = QoSProfile(
+            reliability=QoSReliabilityPolicy.RELIABLE,
+            depth=10
+        )
+        
+        # Use reliable QoS for the status publisher
+        self.status_pub = self.create_publisher(
+            Bool, 
+            f"{self.node_name}/bag_recording_status", 
+            reliable_qos
+        )
+        
         self.toggle_status = self.create_subscription(
-            Bool, f"/{self.robot}/set_recording_status", self.set_status_callback, 10
+            Bool, 
+            f"{self.node_name}/set_recording_status", 
+            self.set_status_callback, 
+            10
         )
 
-        self.timer = self.create_timer(0.1, self.pub_status_callback)
+        self.timer = self.create_timer(0.5, self.pub_status_callback)
 
     def add_topics(self):
-        for topic in self.cfg["topics"]:
-            self.commands.append(topic)
+        namespace = self.get_namespace()
+        
+        for section, topics in self.cfg['topics'].items():
+            self.commands[section] = []
+            self.commands[section].extend(self.command_prefix)
+            
+            # Set the output filename.
+            self.commands[section].append('-o')
+            self.commands[section].append(
+                f"{section}_{datetime.datetime.now().strftime('%Y%m%d_%H%M%S')}" )
+            
+            for topic in topics:
+                if topic.startswith('/'):
+                    full_topic_name = topic
+                else:
+                    full_topic_name = f"{namespace}/{topic}"
+                    
+                self.commands[section].append(full_topic_name)
+                self.get_logger().warn(f"Recording section {section} topic: {full_topic_name}")
 
     def pub_status_callback(self):
         msg = Bool()
@@ -72,16 +103,21 @@ class BagRecorderNode(Node):
     def run(self):
         if not self.active:
             self.active = True
-            self.process = subprocess.Popen(self.commands)
-            self.cur_pid = self.process.pid
-            self.get_logger().info(f"Started Recording using PID {self.cur_pid}")
+            
+            for section, command in self.commands.items():
+                self.process[section] = dict()
+                self.process[section]['process'] = subprocess.Popen(command)
+                self.process[section]['pid'] = self.process[section]['process'].pid
+                self.get_logger().info(f"Started Recording Section {section} with PID {self.process[section]['pid']}")
 
     def interrupt(self):
         if self.active:
+            for section, process in self.process.items():
+                process['process'].send_signal(signal.SIGINT)
+                process['process'].wait()
+                self.get_logger().info(f"Ending Recording of Section {section} with PID {process['pid']}")
+            
             self.active = False
-            self.process.send_signal(signal.SIGINT)
-            self.process.wait()
-            self.get_logger().info(f"Ending Recording of PID {self.process.pid}")
 
 
 def main(args=None):
