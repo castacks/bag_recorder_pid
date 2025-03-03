@@ -7,6 +7,7 @@ import signal
 import time
 import os
 import rclpy
+from rclpy.qos import QoSProfile, QoSReliabilityPolicy
 
 
 class BagRecorderNode(Node):
@@ -14,15 +15,11 @@ class BagRecorderNode(Node):
         super().__init__("bag_record_node")
 
         self.declare_parameter(
-            "cfg_path", str(Path(__file__).parents[3] / "src/bag_record_pid/cfg.yaml")
+            "cfg_path", str(Path(__file__).parents[3] / "config/cfg.yaml")
         )
 
         self.declare_parameter(
-            "output_dir", str(Path(__file__).parents[3] / "src/bag_record_pid/logging/")
-        )
-
-        self.declare_parameter(
-            "robot_name", "spot1"
+            "output_dir", str("/logging/")
         )
         
         self.cfg_path = (
@@ -32,14 +29,12 @@ class BagRecorderNode(Node):
         self.output_dir = (
             self.get_parameter("output_dir").get_parameter_value().string_value
         )
-        
-        self.robot = (
-            self.get_parameter("robot_name").get_parameter_value().string_value
-        )
 
         self.active = False
         self.cfg = yaml.safe_load(open(self.cfg_path))
 
+        # TODO: check if the output directory exists.
+        # Exit if it does not exist.
         os.chdir(self.output_dir)
 
         self.commands = ["ros2", "bag", "record", "-s", "mcap"]
@@ -47,12 +42,24 @@ class BagRecorderNode(Node):
 
         self.process = None
         
-        self.status_pub = self.create_publisher(Bool, f"/{self.robot}/bag_recording_status", 10)
+        # Create QoS profile for reliable communication
+        reliable_qos = QoSProfile(
+            reliability=QoSReliabilityPolicy.RELIABLE,
+            depth=10
+        )
+        
+        # Use reliable QoS for the status publisher
+        self.status_pub = self.create_publisher(
+            Bool, 
+            "bag_recording_status", 
+            reliable_qos
+        )
+        
         self.toggle_status = self.create_subscription(
-            Bool, f"/{self.robot}/set_recording_status", self.set_status_callback, 10
+            Bool, "set_recording_status", self.set_status_callback, 10
         )
 
-        self.timer = self.create_timer(0.1, self.pub_status_callback)
+        self.timer = self.create_timer(0.5, self.pub_status_callback)
 
     def add_topics(self):
         for topic in self.cfg["topics"]:
