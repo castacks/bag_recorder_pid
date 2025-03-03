@@ -26,7 +26,7 @@ def generate_launch_description():
     bag_record_node = Node(
         package='bag_record_pid',
         executable='bag_record_node',
-        name='bag_record_pid_node',
+        name='bag_record_pid',
         parameters=[{
             'cfg_path': LaunchConfiguration('cfg_path'),
             'output_dir': LaunchConfiguration('output_dir')

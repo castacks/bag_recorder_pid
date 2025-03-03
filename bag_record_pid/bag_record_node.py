@@ -14,6 +14,8 @@ class BagRecorderNode(Node):
     def __init__(self):
         super().__init__("bag_record_node")
 
+        self.node_name = self.get_name() # Get the full node name, including namespace if any
+
         self.declare_parameter(
             "cfg_path", str(Path(__file__).parents[3] / "config/cfg.yaml")
         )
@@ -51,19 +53,30 @@ class BagRecorderNode(Node):
         # Use reliable QoS for the status publisher
         self.status_pub = self.create_publisher(
             Bool, 
-            "bag_recording_status", 
+            f"{self.node_name}/bag_recording_status", 
             reliable_qos
         )
         
         self.toggle_status = self.create_subscription(
-            Bool, "set_recording_status", self.set_status_callback, 10
+            Bool, 
+            f"{self.node_name}/set_recording_status", 
+            self.set_status_callback, 
+            10
         )
 
         self.timer = self.create_timer(0.5, self.pub_status_callback)
 
     def add_topics(self):
+        namespace = self.get_namespace()
+        
         for topic in self.cfg["topics"]:
-            self.commands.append(topic)
+            if topic.startswith('/'):
+                full_topic_name = topic
+            else:
+                full_topic_name = f"{namespace}/{topic}"
+                
+            self.commands.append(full_topic_name)
+            self.get_logger().warn(f"Recording topic: {full_topic_name}")
 
     def pub_status_callback(self):
         msg = Bool()
