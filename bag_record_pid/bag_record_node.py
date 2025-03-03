@@ -1,3 +1,4 @@
+
 from rclpy.node import Node
 from pathlib import Path
 from std_msgs.msg import Bool
@@ -8,7 +9,7 @@ import time
 import os
 import rclpy
 from rclpy.qos import QoSProfile, QoSReliabilityPolicy
-
+import datetime
 
 class BagRecorderNode(Node):
     def __init__(self):
@@ -39,10 +40,11 @@ class BagRecorderNode(Node):
         # Exit if it does not exist.
         os.chdir(self.output_dir)
 
-        self.commands = ["ros2", "bag", "record", "-s", "mcap"]
+        self.command_prefix = ["ros2", "bag", "record", "-s", "mcap"]
+        self.commands = dict()
         self.add_topics()
 
-        self.process = None
+        self.process = dict()
         
         # Create QoS profile for reliable communication
         reliable_qos = QoSProfile(
@@ -69,14 +71,23 @@ class BagRecorderNode(Node):
     def add_topics(self):
         namespace = self.get_namespace()
         
-        for topic in self.cfg["topics"]:
-            if topic.startswith('/'):
-                full_topic_name = topic
-            else:
-                full_topic_name = f"{namespace}/{topic}"
-                
-            self.commands.append(full_topic_name)
-            self.get_logger().warn(f"Recording topic: {full_topic_name}")
+        for section, topics in self.cfg['topics'].items():
+            self.commands[section] = []
+            self.commands[section].extend(self.command_prefix)
+            
+            # Set the output filename.
+            self.commands[section].append('-o')
+            self.commands[section].append(
+                f"{section}_{datetime.datetime.now().strftime('%Y%m%d_%H%M%S')}" )
+            
+            for topic in topics:
+                if topic.startswith('/'):
+                    full_topic_name = topic
+                else:
+                    full_topic_name = f"{namespace}/{topic}"
+                    
+                self.commands[section].append(full_topic_name)
+                self.get_logger().warn(f"Recording section {section} topic: {full_topic_name}")
 
     def pub_status_callback(self):
         msg = Bool()
@@ -92,16 +103,21 @@ class BagRecorderNode(Node):
     def run(self):
         if not self.active:
             self.active = True
-            self.process = subprocess.Popen(self.commands)
-            self.cur_pid = self.process.pid
-            self.get_logger().info(f"Started Recording using PID {self.cur_pid}")
+            
+            for section, command in self.commands.items():
+                self.process[section] = dict()
+                self.process[section]['process'] = subprocess.Popen(command)
+                self.process[section]['pid'] = self.process[section]['process'].pid
+                self.get_logger().info(f"Started Recording Section {section} with PID {self.process[section]['pid']}")
 
     def interrupt(self):
         if self.active:
+            for section, process in self.process.items():
+                process['process'].send_signal(signal.SIGINT)
+                process['process'].wait()
+                self.get_logger().info(f"Ending Recording of Section {section} with PID {process['pid']}")
+            
             self.active = False
-            self.process.send_signal(signal.SIGINT)
-            self.process.wait()
-            self.get_logger().info(f"Ending Recording of PID {self.process.pid}")
 
 
 def main(args=None):
