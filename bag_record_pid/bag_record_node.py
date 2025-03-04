@@ -154,7 +154,13 @@ class BagRecorderNode(Node):
                 cmd.append('-o')
                 cmd.append(output_filename)
                 
-                cmd.extend(command_dict['suffix'])
+                # Appending an empty string will cause the ros2 bag record to consider the space as a topic
+                # and introduce an error.
+                if len(command_dict['suffix']) > 0:
+                    cmd.extend(command_dict['suffix'])
+                
+                # self.get_logger().warn(f"Running command: {' '.join(cmd)}")
+                # self.get_logger().warn(f"Running command: {cmd}")
                 
                 self.process[section_name] = dict()
                 self.process[section_name]['process'] = subprocess.Popen(cmd)
