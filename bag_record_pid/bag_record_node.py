@@ -1,4 +1,5 @@
 
+import copy
 from rclpy.node import Node
 from pathlib import Path
 from std_msgs.msg import Bool
@@ -25,13 +26,13 @@ class BagRecorderNode(Node):
             "output_dir", str("/logging/")
         )
         
-        self.cfg_path = (
-            self.get_parameter("cfg_path").get_parameter_value().string_value
+        self.declare_parameter(
+            "mcap_qos_dir", ""
         )
-
-        self.output_dir = (
-            self.get_parameter("output_dir").get_parameter_value().string_value
-        )
+        
+        self.cfg_path     = self.get_parameter("cfg_path").get_parameter_value().string_value
+        self.output_dir   = self.get_parameter("output_dir").get_parameter_value().string_value
+        self.mcap_qos_dir = self.get_parameter("mcap_qos_dir").get_parameter_value().string_value
 
         self.active = False
         self.cfg = yaml.safe_load(open(self.cfg_path))
@@ -69,25 +70,64 @@ class BagRecorderNode(Node):
         self.timer = self.create_timer(0.5, self.pub_status_callback)
 
     def add_topics(self):
+        '''The configuration file looks like
+        
+            sections:
+                gps_lidar_spot_depth_status:
+                    mcap_qos: mcap_qos.yaml
+                    args: 
+                    - -b
+                    - 4000000000 # ~4GB
+                    - --max-cache-size 
+                    - 1073741824 # 1GB
+                    topics:
+                    - /tf
+                    - gq7/ekf/llh_position
+                    
+            The -o or --output argument should not be specified here.
+            The "mcap_qos" field here will be interpreted as the filename of the MCAP QoS profile.
+            
+            self.commands[section_name] = {
+                'prefix': [],
+                'suffix': [],
+            }
+        '''
         namespace = self.get_namespace()
         
-        for section, topics in self.cfg['topics'].items():
-            self.commands[section] = []
-            self.commands[section].extend(self.command_prefix)
+        for section_name, section_config in self.cfg['sections'].items():
+            self.commands[section_name] = dict()
             
-            # Set the output filename.
-            self.commands[section].append('-o')
-            self.commands[section].append(
-                f"{section}_{datetime.datetime.now().strftime('%Y%m%d_%H%M%S')}" )
+            # Command lists.
+            self.commands[section_name]['prefix'] = []
+            self.commands[section_name]['suffix'] = []
             
-            for topic in topics:
+            # Populate the initial command line.
+            self.commands[section_name]['prefix'].extend(self.command_prefix)
+            
+            # Add the args to the command line.
+            str_args = [ str(c) for c in section_config['args'] ]
+            self.commands[section_name]['prefix'].extend(str_args)
+            
+            # Set the mcap qos profile.
+            if section_config['mcap_qos'] != "":
+                mcap_qos_path = os.path.join(self.mcap_qos_dir, str(section_config['mcap_qos']))
+                self.commands[section_name]['prefix'].append('--storage-config-file')
+                self.commands[section_name]['prefix'].append(mcap_qos_path)
+            
+            self.get_logger().warn(
+                f'CMD for section {section_name}: '
+                f'{" ".join(self.commands[section_name]["prefix"])}' )
+            
+            # Add the topics to the command at the end.
+            self.get_logger().warn(f"Recording section {section_name} topics:")
+            for topic in section_config['topics']:
                 if topic.startswith('/'):
                     full_topic_name = topic
                 else:
                     full_topic_name = f"{namespace}/{topic}"
                     
-                self.commands[section].append(full_topic_name)
-                self.get_logger().warn(f"Recording section {section} topic: {full_topic_name}")
+                self.commands[section_name]['suffix'].append(full_topic_name)
+                self.get_logger().warn(f"{full_topic_name}")
 
     def pub_status_callback(self):
         msg = Bool()
@@ -104,19 +144,37 @@ class BagRecorderNode(Node):
         if not self.active:
             self.active = True
             
-            for section, command in self.commands.items():
-                self.process[section] = dict()
-                self.process[section]['process'] = subprocess.Popen(command)
-                self.process[section]['pid'] = self.process[section]['process'].pid
-                self.get_logger().info(f"Started Recording Section {section} with PID {self.process[section]['pid']}")
+            time_suffix = f"{datetime.datetime.now().strftime('%Y%m%d_%H%M%S')}"
+            
+            for section_name, command_dict in self.commands.items():
+                cmd = copy.deepcopy(command_dict['prefix'])
+                
+                # Set the output filename.
+                output_filename = f"{section_name}_{time_suffix}"
+                cmd.append('-o')
+                cmd.append(output_filename)
+                
+                # Appending an empty string will cause the ros2 bag record to consider the space as a topic
+                # and introduce an error.
+                if len(command_dict['suffix']) > 0:
+                    cmd.extend(command_dict['suffix'])
+                
+                # self.get_logger().warn(f"Running command: {' '.join(cmd)}")
+                # self.get_logger().warn(f"Running command: {cmd}")
+                
+                self.process[section_name] = dict()
+                self.process[section_name]['process'] = subprocess.Popen(cmd)
+                self.process[section_name]['pid'] = self.process[section_name]['process'].pid
+                self.process[section_name]['output_filename'] = output_filename
+                self.get_logger().warn(f"Started Recording Section {section_name} with PID {self.process[section_name]['pid']} to {output_filename}")
 
     def interrupt(self):
         if self.active:
-            for section, process in self.process.items():
+            for section_name, process in self.process.items():
                 process['process'].send_signal(signal.SIGINT)
                 process['process'].wait()
-                self.get_logger().info(f"Ending Recording of Section {section} with PID {process['pid']}")
-            
+                self.get_logger().info(f"Ending Recording of Section {section_name} with PID {process['pid']}")
+                self.get_logger().warn(f"Output filename: {process['output_filename']}")
             self.active = False
 
 

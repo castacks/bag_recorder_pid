@@ -20,6 +20,12 @@ def generate_launch_description():
         default_value=LaunchConfiguration('output_dir', default='/logging'),
         description='Logging directory'
     )
+    
+    mcap_qos_dir_arg = DeclareLaunchArgument(
+        'mcap_qos_dir',
+        default_value=LaunchConfiguration('mcap_qos_dir', default=pkg_dir + '/config'),
+        description='MCAP QoS directory'
+    )
 
     # Include the bag record node launch file
     bag_record_launch = IncludeLaunchDescription(
@@ -29,7 +35,8 @@ def generate_launch_description():
         ]),
         launch_arguments={
             'cfg_path': LaunchConfiguration('cfg_path'),
-            'output_dir': LaunchConfiguration('output_dir')
+            'output_dir': LaunchConfiguration('output_dir'),
+            'mcap_qos_dir': LaunchConfiguration('mcap_qos_dir')
         }.items()
     )
 
@@ -37,6 +44,7 @@ def generate_launch_description():
         # Launch arguments
         cfg_path_arg,
         output_dir_arg,
+        mcap_qos_dir_arg,
         # Include launch file
         bag_record_launch
     ])

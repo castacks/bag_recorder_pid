@@ -21,6 +21,12 @@ def generate_launch_description():
         default_value='/logging',
         description='Logging directory'
     )
+    
+    mcap_qos_dir_arg = DeclareLaunchArgument(
+        'mcap_qos_dir',
+        default_value=os.path.join(pkg_dir, 'config'),
+        description='MCAP QoS directory'
+    )
 
     # Create the node with launch configurations
     bag_record_node = Node(
@@ -29,7 +35,8 @@ def generate_launch_description():
         name='bag_record_pid',
         parameters=[{
             'cfg_path': LaunchConfiguration('cfg_path'),
-            'output_dir': LaunchConfiguration('output_dir')
+            'output_dir': LaunchConfiguration('output_dir'),
+            'mcap_qos_dir': LaunchConfiguration('mcap_qos_dir')
         }],
         output='screen'
     )
@@ -38,6 +45,7 @@ def generate_launch_description():
         # Add all argument declarations
         cfg_path_arg,
         output_dir_arg,
+        mcap_qos_dir_arg,
         # Add the node
         bag_record_node
     ])
