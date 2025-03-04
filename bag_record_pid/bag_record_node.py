@@ -25,13 +25,13 @@ class BagRecorderNode(Node):
             "output_dir", str("/logging/")
         )
         
-        self.cfg_path = (
-            self.get_parameter("cfg_path").get_parameter_value().string_value
+        self.declare_parameter(
+            "mcap_qos_dir", ""
         )
-
-        self.output_dir = (
-            self.get_parameter("output_dir").get_parameter_value().string_value
-        )
+        
+        self.cfg_path     = self.get_parameter("cfg_path").get_parameter_value().string_value
+        self.output_dir   = self.get_parameter("output_dir").get_parameter_value().string_value
+        self.mcap_qos_dir = self.get_parameter("mcap_qos_dir").get_parameter_value().string_value
 
         self.active = False
         self.cfg = yaml.safe_load(open(self.cfg_path))
@@ -69,25 +69,58 @@ class BagRecorderNode(Node):
         self.timer = self.create_timer(0.5, self.pub_status_callback)
 
     def add_topics(self):
+        '''The configuration file looks like
+        
+            sections:
+                gps_lidar_spot_depth_status:
+                    mcap_qos: mcap_qos.yaml
+                    args: 
+                    - -b
+                    - 4000000000 # ~4GB
+                    - --max-cache-size 
+                    - 1073741824 # 1GB
+                    topics:
+                    - /tf
+                    - gq7/ekf/llh_position
+                    
+            The -o or --output argument should not be specified here.
+            The "mcap_qos" field here will be interpreted as the filename of the MCAP QoS profile.
+        '''
         namespace = self.get_namespace()
         
-        for section, topics in self.cfg['topics'].items():
-            self.commands[section] = []
-            self.commands[section].extend(self.command_prefix)
+        for section_name, section_config in self.cfg['sections'].items():
+            self.commands[section_name] = []
+            
+            # Populate the initial command line.
+            self.commands[section_name].extend(self.command_prefix)
+            
+            # Add the args to the command line.
+            str_args = [ str(c) for c in section_config['args'] ]
+            self.commands[section_name].extend(str_args)
             
             # Set the output filename.
-            self.commands[section].append('-o')
-            self.commands[section].append(
-                f"{section}_{datetime.datetime.now().strftime('%Y%m%d_%H%M%S')}" )
+            self.commands[section_name].append('-o')
+            self.commands[section_name].append(
+                f"{section_name}_{datetime.datetime.now().strftime('%Y%m%d_%H%M%S')}" )
             
-            for topic in topics:
+            # Set the mcap qos profile.
+            if section_config['mcap_qos'] != "":
+                mcap_qos_path = os.path.join(self.mcap_qos_dir, str(section_config['mcap_qos']))
+                self.commands[section_name].append('--storage-config-file')
+                self.commands[section_name].append(mcap_qos_path)
+            
+            self.get_logger().warn(f'CMD for section {section_name}: {" ".join(self.commands[section_name])}')
+            
+            # Add the topics to the command at the end.
+            self.get_logger().warn(f"Recording section {section_name} topics:")
+            for topic in section_config['topics']:
                 if topic.startswith('/'):
                     full_topic_name = topic
                 else:
                     full_topic_name = f"{namespace}/{topic}"
                     
-                self.commands[section].append(full_topic_name)
-                self.get_logger().warn(f"Recording section {section} topic: {full_topic_name}")
+                self.commands[section_name].append(full_topic_name)
+                self.get_logger().warn(f"{full_topic_name}")
 
     def pub_status_callback(self):
         msg = Bool()

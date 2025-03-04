@@ -29,6 +29,12 @@ def generate_launch_description():
         description='Configuration file for bag record pid'
     )
     
+    mcap_qos_dir_arg = DeclareLaunchArgument(
+        'mcap_qos_dir',
+        default_value=os.path.join(pkg_dir, 'config'),
+        description='MCAP QoS directory'
+    )
+    
     output_dir_arg = DeclareLaunchArgument(
         'output_dir',
         default_value='/logging',
@@ -47,7 +53,8 @@ def generate_launch_description():
                 ),
                 launch_arguments={
                     'cfg_path': LaunchConfiguration('cfg_path'),
-                    'output_dir': LaunchConfiguration('output_dir')
+                    'output_dir': LaunchConfiguration('output_dir'),
+                    'mcap_qos_dir': LaunchConfiguration('mcap_qos_dir')
                 }.items()
             )
         ]
@@ -58,6 +65,7 @@ def generate_launch_description():
         robot_prefix_arg,
         # Add all argument declarations
         cfg_path_arg,
+        mcap_qos_dir_arg,
         output_dir_arg,
         # Include the group containing the database node launch file
         bag_record_group
