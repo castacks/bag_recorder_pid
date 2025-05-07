@@ -30,10 +30,16 @@ class BagRecorderNode(Node):
             "mcap_qos_dir", ""
         )
         
+        self.declare_parameter(
+            "best_effort_qos_sub", True
+        )
+        
+        
         self.cfg_path     = self.get_parameter("cfg_path").get_parameter_value().string_value
         self.output_dir   = self.get_parameter("output_dir").get_parameter_value().string_value
         self.mcap_qos_dir = self.get_parameter("mcap_qos_dir").get_parameter_value().string_value
-
+        self.best_effort_qos_sub = self.get_parameter("best_effort_qos_sub").get_parameter_value().bool_value
+        
         self.active = False
         self.cfg = yaml.safe_load(open(self.cfg_path))
 
@@ -64,7 +70,10 @@ class BagRecorderNode(Node):
             Bool, 
             f"{self.node_name}/set_recording_status", 
             self.set_status_callback, 
-            10
+            QoSProfile(
+                reliability=QoSReliabilityPolicy.BEST_EFFORT,
+                depth=10
+            ) if self.best_effort_qos_sub else reliable_qos
         )
 
         self.timer = self.create_timer(0.5, self.pub_status_callback)
