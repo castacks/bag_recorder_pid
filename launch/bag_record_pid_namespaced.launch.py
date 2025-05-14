@@ -40,6 +40,13 @@ def generate_launch_description():
         default_value='/logging',
         description='Logging directory'
     )
+    
+    best_effort_qos_sub_arg = DeclareLaunchArgument(
+        'best_effort_qos_sub',
+        default_value=LaunchConfiguration('best_effort_qos_sub', default=True),
+        description='Toggle Best-Effort QoS Setting of Subscriber'
+    )
+
 
     # Create a group action with namespace
     bag_record_group = GroupAction(
@@ -54,7 +61,8 @@ def generate_launch_description():
                 launch_arguments={
                     'cfg_path': LaunchConfiguration('cfg_path'),
                     'output_dir': LaunchConfiguration('output_dir'),
-                    'mcap_qos_dir': LaunchConfiguration('mcap_qos_dir')
+                    'mcap_qos_dir': LaunchConfiguration('mcap_qos_dir'),
+                    'best_effort_qos_sub' : LaunchConfiguration('best_effort_qos_sub')
                 }.items()
             )
         ]
@@ -67,6 +75,7 @@ def generate_launch_description():
         cfg_path_arg,
         mcap_qos_dir_arg,
         output_dir_arg,
+        best_effort_qos_sub_arg,
         # Include the group containing the database node launch file
         bag_record_group
     ])

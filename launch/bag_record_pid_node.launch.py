@@ -27,6 +27,13 @@ def generate_launch_description():
         default_value=os.path.join(pkg_dir, 'config'),
         description='MCAP QoS directory'
     )
+    
+    best_effort_qos_sub_arg = DeclareLaunchArgument(
+        'best_effort_qos_sub',
+        default_value=LaunchConfiguration('best_effort_qos_sub', default=True),
+        description='Toggle Best-Effort QoS Setting of Subscriber'
+    )
+
 
     # Create the node with launch configurations
     bag_record_node = Node(
@@ -36,7 +43,8 @@ def generate_launch_description():
         parameters=[{
             'cfg_path': LaunchConfiguration('cfg_path'),
             'output_dir': LaunchConfiguration('output_dir'),
-            'mcap_qos_dir': LaunchConfiguration('mcap_qos_dir')
+            'mcap_qos_dir': LaunchConfiguration('mcap_qos_dir'),
+            'best_effort_qos_sub': LaunchConfiguration('best_effort_qos_sub')
         }],
         output='screen'
     )
@@ -46,6 +54,7 @@ def generate_launch_description():
         cfg_path_arg,
         output_dir_arg,
         mcap_qos_dir_arg,
+        best_effort_qos_sub_arg,
         # Add the node
         bag_record_node
     ])

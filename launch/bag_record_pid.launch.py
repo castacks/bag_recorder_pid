@@ -27,6 +27,12 @@ def generate_launch_description():
         description='MCAP QoS directory'
     )
 
+    best_effort_qos_sub_arg = DeclareLaunchArgument(
+        'best_effort_qos_sub',
+        default_value=LaunchConfiguration('best_effort_qos_sub', default=True),
+        description='Toggle Best-Effort QoS Setting of Subscriber'
+    )
+
     # Include the bag record node launch file
     bag_record_launch = IncludeLaunchDescription(
         PythonLaunchDescriptionSource([
@@ -36,15 +42,19 @@ def generate_launch_description():
         launch_arguments={
             'cfg_path': LaunchConfiguration('cfg_path'),
             'output_dir': LaunchConfiguration('output_dir'),
-            'mcap_qos_dir': LaunchConfiguration('mcap_qos_dir')
+            'mcap_qos_dir': LaunchConfiguration('mcap_qos_dir'),
+            'best_effort_qos_sub' : LaunchConfiguration('best_effort_qos_sub')
         }.items()
     )
+    
+
 
     return LaunchDescription([
         # Launch arguments
         cfg_path_arg,
         output_dir_arg,
         mcap_qos_dir_arg,
+        best_effort_qos_sub_arg,
         # Include launch file
         bag_record_launch
     ])
