@@ -12,6 +12,25 @@ import rclpy
 from rclpy.qos import QoSProfile, QoSReliabilityPolicy
 import datetime
 
+# Example configuration file:
+# sections:
+#   gps_lidar_spot_depth_status:
+#     mcap_qos: mcap_qos_agx.yaml
+#     args: 
+#       - -b
+#       - 4000000000 # ~4GB
+#       - --max-cache-size 
+#       - 1073741824 # 1GB
+#     topics:
+#       - /parameter_events
+#       - /rosout
+#       - /tf
+#       - /tf_static
+#       - bag_record_pid/bag_recording_status
+#       - bag_record_pid/set_recording_status
+#       - gq7/ekf/llh_position
+#       - gq7/ekf/odometry_earth
+
 class BagRecorderNode(Node):
     def __init__(self):
         super().__init__("bag_record_node")
