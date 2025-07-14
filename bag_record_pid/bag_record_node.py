@@ -1,5 +1,7 @@
 
 import copy
+
+import psutil
 from rclpy.node import Node
 from pathlib import Path
 from std_msgs.msg import Bool
@@ -196,11 +198,28 @@ class BagRecorderNode(Node):
                 self.process[section_name]['output_filename'] = output_filename
                 self.get_logger().warn(f"Started Recording Section {section_name} with PID {self.process[section_name]['pid']} to {output_filename}")
 
+    def terminate_proc_and_children(self, pid):
+        try:
+            proc = psutil.Process(pid)
+            for child_proc in proc.children(recursive=True):
+                child_proc.send_signal(signal.SIGINT)
+                child_proc.wait()
+            proc.send_signal(signal.SIGINT)
+            proc.wait()
+        except Exception as e:
+            self.get_logger().error(f"Could not kill child processes of recording PID (PID number: {pid}), faced error {e}")
+        
+        try:
+            proc.terminate()
+            proc.wait()
+        except psutil.NoSuchProcess:
+            self.get_logger().info("Recorder has been killed")
+
+    
     def interrupt(self):
         if self.active:
             for section_name, process in self.process.items():
-                process['process'].send_signal(signal.SIGINT)
-                process['process'].wait()
+                self.terminate_proc_and_children(process["pid"])
                 self.get_logger().info(f"Ending Recording of Section {section_name} with PID {process['pid']}")
                 self.get_logger().warn(f"Output filename: {process['output_filename']}")
             self.active = False
@@ -209,11 +228,13 @@ class BagRecorderNode(Node):
 def main(args=None):
     rclpy.init(args=args)
     node = BagRecorderNode()
-    rclpy.spin(node)
-    node.interrupt()
-        
-    node.destroy_node()
-    rclpy.try_shutdown()
+    try:
+        rclpy.spin(node)
+    except KeyboardInterrupt:
+        node.interrupt()
+    finally:
+        node.destroy_node()
+        rclpy.try_shutdown()
 
 
 if __name__ == "__main__":
