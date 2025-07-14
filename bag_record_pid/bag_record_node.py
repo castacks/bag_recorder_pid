@@ -174,9 +174,7 @@ class BagRecorderNode(Node):
                 # self.get_logger().warn(f"Running command: {cmd}")
                 
                 self.process[section_name] = dict()
-                self.process[section_name]['process'] = subprocess.Popen(cmd,
-                                                                         stdin=subprocess.DEVNULL,
-                                                                         stdout=subprocess.DEVNULL)
+                self.process[section_name]['process'] = subprocess.Popen(cmd)
                 self.process[section_name]['pid'] = self.process[section_name]['process'].pid
                 self.process[section_name]['output_filename'] = output_filename
                 self.get_logger().warn(f"Started Recording Section {section_name} with PID {self.process[section_name]['pid']} to {output_filename}")
@@ -190,7 +188,7 @@ class BagRecorderNode(Node):
             proc.send_signal(signal.SIGINT)
             proc.wait()
         except Exception as e:
-            self.get_logger().error(f"Could not kill child processes of recording PID, faced error {e}")
+            self.get_logger().error(f"Could not kill child processes of recording PID (PID number: {pid}), faced error {e}")
         
         try:
             proc.terminate()
