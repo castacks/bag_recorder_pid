@@ -199,6 +199,7 @@ class BagRecorderNode(Node):
                 self.get_logger().warn(f"Started Recording Section {section_name} with PID {self.process[section_name]['pid']} to {output_filename}")
 
     def terminate_proc_and_children(self, pid):
+        
         try:
             proc = psutil.Process(pid)
             for child_proc in proc.children(recursive=True):
@@ -210,6 +211,7 @@ class BagRecorderNode(Node):
             self.get_logger().error(f"Could not kill child processes of recording PID (PID number: {pid}), faced error {e}")
         
         try:
+            proc = psutil.Process(pid)
             proc.terminate()
             proc.wait()
         except psutil.NoSuchProcess:
