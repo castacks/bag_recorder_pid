@@ -193,12 +193,13 @@ class BagRecorderNode(Node):
                 # self.get_logger().warn(f"Running command: {cmd}")
                 
                 self.process[section_name] = dict()
-                self.process[section_name]['process'] = subprocess.Popen(cmd)
+                self.process[section_name]['process'] = subprocess.Popen(cmd, stdin=subprocess.PIPE)
+                self.process[section_name]['cmd'] = cmd
                 self.process[section_name]['pid'] = self.process[section_name]['process'].pid
                 self.process[section_name]['output_filename'] = output_filename
                 self.get_logger().warn(f"Started Recording Section {section_name} with PID {self.process[section_name]['pid']} to {output_filename}")
 
-    def terminate_proc_and_children(self, pid):
+    def terminate_proc_and_children(self, pid, cmdline, subprocess_cmd : subprocess.Popen):
         
         try:
             proc = psutil.Process(pid)
@@ -210,18 +211,34 @@ class BagRecorderNode(Node):
         except Exception as e:
             self.get_logger().error(f"Could not kill child processes of recording PID (PID number: {pid}), faced error {e}")
         
+        try: 
+            subprocess_cmd.communicate(input=b'\n')
+        except Exception as e:
+            self.get_logger().error(f"Could not communicate with subprocess command because of error {e}")
+            
         try:
             proc = psutil.Process(pid)
             proc.terminate()
             proc.wait()
         except psutil.NoSuchProcess:
             self.get_logger().info("Recorder has been killed")
-
-    
+        
+        try:
+            for proc in psutil.process_iter():
+                if "record" in proc.name() and set(cmdline[2:]).issubset(proc.cmdline()):
+                    proc.send_signal(subprocess.signal.SIGINT)
+                    proc.wait()
+                    if proc.is_running():
+                        proc.kill()
+                        proc.wait()
+        except Exception as e:
+            self.get_logger().error(f"Failed when trying to manually terminate any recording processes due to: {e}")
+            
     def interrupt(self):
         if self.active:
             for section_name, process in self.process.items():
-                self.terminate_proc_and_children(process["pid"])
+                # process["process"] : subprocess.Popen # type: ignore
+                self.terminate_proc_and_children(process["pid"], process["cmd"], process["process"])
                 self.get_logger().info(f"Ending Recording of Section {section_name} with PID {process['pid']}")
                 self.get_logger().warn(f"Output filename: {process['output_filename']}")
             self.active = False
