@@ -24,7 +24,7 @@ def generate_launch_description():
     
     cfg_path_arg = DeclareLaunchArgument(
         'cfg_path',
-        default_value=os.path.join(pkg_dir, 'config', 'cfg.yaml'),
+        default_value=os.path.join(pkg_dir, 'config', 'tartan_rgbt.yaml'),
         description='Configuration file for bag record pid'
     )
     
@@ -62,6 +62,21 @@ def generate_launch_description():
         output='screen'
     )
 
+    trigger_using_gpio = Node(
+        package='bag_record_pid',
+        executable='trigger_using_gpio',
+        name='trigger_using_gpio',
+        namespace=LaunchConfiguration('namespace'),
+        output='screen',
+        parameters=[{
+            'pin': 37,
+            'pull': 'down',
+            'debounce_ms': 200,
+            'topic': 'bag_record_pid/set_recording_status',
+            'active_low': False
+        }]  
+    )
+
     return LaunchDescription([
         # Add all argument declarations
         namespace_arg,
@@ -71,6 +86,7 @@ def generate_launch_description():
         mcap_qos_dir_arg,
         best_effort_qos_sub_arg,
         # Add the node
-        bag_record_node
+        bag_record_node,
+        trigger_using_gpio
     ])
 

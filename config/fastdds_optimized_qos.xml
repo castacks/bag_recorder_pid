@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<profiles xmlns="http://www.eprosima.com/XMLProfiles">
+
+  <!-- Define transports globally (top-level) -->
+  <transport_descriptors>
+    <!-- Shared Memory transport -->
+    <transport_descriptor>
+      <transport_id>shm_transport</transport_id>
+      <type>SHM</type>
+      <!-- Size for Fast-DDS' own SHM segment (bytes). Must fit in /dev/shm -->
+      <segment_size>1073741824</segment_size> <!-- 1 GiB -->
+    </transport_descriptor>
+
+    <!-- UDPv4 fallback -->
+    <transport_descriptor>
+      <transport_id>udp_v4</transport_id>
+      <type>UDPv4</type>
+      <sendBufferSize>4194304</sendBufferSize>
+      <receiveBufferSize>4194304</receiveBufferSize>
+    </transport_descriptor>
+  </transport_descriptors>
+
+  <!-- Participant that uses the defined transports -->
+  <participant profile_name="shm_participant_profile" is_default_profile="true">
+    <rtps>
+      <!-- Use ONLY the transports we list below -->
+      <useBuiltinTransports>false</useBuiltinTransports>
+      <userTransports>
+        <transport_id>shm_transport</transport_id>
+        <transport_id>udp_v4</transport_id>
+      </userTransports>
+
+      <!-- Socket buffers still help for UDP fallback -->
+      <sendSocketBufferSize>4194304</sendSocketBufferSize>
+      <listenSocketBufferSize>4194304</listenSocketBufferSize>
+    </rtps>
+  </participant>
+
+</profiles>

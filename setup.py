@@ -28,7 +28,8 @@ setup(
     tests_require=['pytest'],
     entry_points={
         'console_scripts': [
-            'bag_record_node = bag_record_pid.bag_record_node:main'
+            'bag_record_node = bag_record_pid.bag_record_node:main',
+            'trigger_using_gpio = bag_record_pid.trigger_using_gpio:main',
         ],
     },
 )
