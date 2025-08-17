@@ -71,7 +71,7 @@ def generate_launch_description():
         parameters=[{
             'pin': 37,
             'pull': 'down',
-            'debounce_ms': 200,
+            'publish_rate_hz': 1.0,
             'topic': 'bag_record_pid/set_recording_status',
             'active_low': False
         }]  
