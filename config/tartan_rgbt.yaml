@@ -23,12 +23,12 @@ sections:
       - /thermal_left/camera_info
       - /thermal_left/ffc_status
       # - /thermal_left/image
-      # - /thermal_left/image_processed
+      - /thermal_left/image_processed
       - /thermal_left/image_rect
       - /thermal_right/camera_info
       - /thermal_right/ffc_status
       # - /thermal_right/image
-      # - /thermal_right/image_processed
+      - /thermal_right/image_processed
       - /thermal_right/image_rect
       - /zed/joint_states
       - /zed/robot_description
@@ -43,6 +43,10 @@ sections:
       - /zed/zed_node/right/image_rect_color
       # - /zed/zed_node/right_raw/camera_info
       # - /zed/zed_node/right_raw/image_raw_color
+      - /zed/zed_node/depth/depth_registered
+      - /zed/zed_node/depth/camera_info
+      - /zed/zed_node/depth/depth_info
+      - /zed/zed_node/confidence/confidence_map
       - /zed/zed_node/status/health
       - /zed/zed_node/status/heartbeat
       - /zed/zed_node/temperature/imu
@@ -52,6 +56,8 @@ sections:
       - /health/thermal_right/status
       - /health/zed/frequency
       - /health/zed/status
+      - /health/depth/frequency
+      - /health/depth/status
 
 #skipped topics 
 # - /zed/zed_node/right_raw_gray/camera_info

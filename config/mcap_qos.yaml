@@ -1,7 +1,7 @@
 noChunkCRC: true
 noChunking: false
-noMessageIndex: true
-noSummary: true
+noMessageIndex: false
+noSummary: false
 chunkSize: 67108864 # 10MB
 # compression: "none"
 # compressionLevel: "Fastest"
