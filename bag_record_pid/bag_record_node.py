@@ -1,0 +1,278 @@
+
+import copy
+
+import psutil
+from rclpy.node import Node
+from pathlib import Path
+from std_msgs.msg import Bool
+import yaml
+import subprocess
+import signal
+import time
+import os
+import rclpy
+from rclpy.qos import QoSProfile, QoSReliabilityPolicy
+import datetime
+
+# Example configuration file:
+# sections:
+#   gps_lidar_spot_depth_status:
+#     mcap_qos: mcap_qos_agx.yaml
+#     args: 
+#       - -b
+#       - 4000000000 # ~4GB
+#       - --max-cache-size 
+#       - 1073741824 # 1GB
+#     topics:
+#       - /parameter_events
+#       - /rosout
+#       - /tf
+#       - /tf_static
+#       - bag_record_pid/bag_recording_status
+#       - bag_record_pid/set_recording_status
+#       - gq7/ekf/llh_position
+#       - gq7/ekf/odometry_earth
+
+class BagRecorderNode(Node):
+    def __init__(self):
+        super().__init__("bag_record_node")
+
+        self.node_name = self.get_name() # Get the full node name, including namespace if any
+
+        self.declare_parameter(
+            "cfg_path", str(Path(__file__).parents[3] / "config/cfg.yaml")
+        )
+
+        self.declare_parameter(
+            "output_dir", str("/logging/")
+        )
+        
+        self.declare_parameter(
+            "mcap_qos_dir", ""
+        )
+        
+        self.declare_parameter(
+            "best_effort_qos_sub", True
+        )
+        
+        
+        self.cfg_path     = self.get_parameter("cfg_path").get_parameter_value().string_value
+        self.output_dir   = self.get_parameter("output_dir").get_parameter_value().string_value
+        self.mcap_qos_dir = self.get_parameter("mcap_qos_dir").get_parameter_value().string_value
+        self.best_effort_qos_sub = self.get_parameter("best_effort_qos_sub").get_parameter_value().bool_value
+        
+        self.active = False
+        self.cfg = yaml.safe_load(open(self.cfg_path))
+
+        # TODO: check if the output directory exists.
+        # Exit if it does not exist.
+        os.chdir(self.output_dir)
+
+        self.command_prefix = ["ros2", "bag", "record", "-s", "mcap"]
+        self.commands = dict()
+        self.add_topics()
+
+        self.process = dict()
+        
+        # Create QoS profile for reliable communication
+        reliable_qos = QoSProfile(
+            reliability=QoSReliabilityPolicy.RELIABLE,
+            depth=10
+        )
+        
+        # Use reliable QoS for the status publisher
+        self.status_pub = self.create_publisher(
+            Bool, 
+            f"{self.node_name}/bag_recording_status", 
+            reliable_qos
+        )
+        
+        self.toggle_status = self.create_subscription(
+            Bool, 
+            f"{self.node_name}/set_recording_status", 
+            self.set_status_callback, 
+            QoSProfile(
+                reliability=QoSReliabilityPolicy.BEST_EFFORT,
+                depth=10
+            ) if self.best_effort_qos_sub else reliable_qos
+        )
+
+        self.timer = self.create_timer(0.5, self.pub_status_callback)
+
+    def add_topics(self):
+        '''The configuration file looks like
+        
+            sections:
+                gps_lidar_spot_depth_status:
+                    mcap_qos: mcap_qos.yaml
+                    args: 
+                    - -b
+                    - 4000000000 # ~4GB
+                    - --max-cache-size 
+                    - 1073741824 # 1GB
+                    topics:
+                    - /tf
+                    - gq7/ekf/llh_position
+                    
+            The -o or --output argument should not be specified here.
+            The "mcap_qos" field here will be interpreted as the filename of the MCAP QoS profile.
+            
+            self.commands[section_name] = {
+                'prefix': [],
+                'suffix': [],
+            }
+        '''
+        namespace = self.get_namespace()
+        
+        for section_name, section_config in self.cfg['sections'].items():
+            self.commands[section_name] = dict()
+            
+            # Command lists.
+            self.commands[section_name]['prefix'] = []
+            self.commands[section_name]['suffix'] = []
+            
+            # Populate the initial command line.
+            self.commands[section_name]['prefix'].extend(self.command_prefix)
+            
+            # Add the args to the command line.
+            str_args = [ str(c) for c in section_config['args'] ]
+            self.commands[section_name]['prefix'].extend(str_args)
+            
+            # Set the mcap qos profile.
+            if section_config['mcap_qos'] != "":
+                mcap_qos_path = os.path.join(self.mcap_qos_dir, str(section_config['mcap_qos']))
+                self.commands[section_name]['prefix'].append('--storage-config-file')
+                self.commands[section_name]['prefix'].append(mcap_qos_path)
+            
+            self.get_logger().warn(
+                f'CMD for section {section_name}: '
+                f'{" ".join(self.commands[section_name]["prefix"])}' )
+            
+            # Add the topics to the command at the end.
+            self.get_logger().warn(f"Recording section {section_name} topics:")
+            for topic in section_config['topics']:
+                if topic.startswith('/'):
+                    full_topic_name = topic
+                else:
+                    full_topic_name = f"{namespace}/{topic}"
+                    
+                self.commands[section_name]['suffix'].append(full_topic_name)
+                self.get_logger().warn(f"{full_topic_name}")
+
+    def pub_status_callback(self):
+        msg = Bool()
+        msg.data = self.active
+        self.status_pub.publish(msg)
+
+    def set_status_callback(self, msg):
+        if msg.data:
+            self.run()
+        else:
+            self.interrupt()
+
+    def run(self):
+        if not self.active:
+            self.active = True
+            
+            time_suffix = f"{datetime.datetime.now().strftime('%Y%m%d_%H%M%S')}"
+            
+            for section_name, command_dict in self.commands.items():
+                cmd = copy.deepcopy(command_dict['prefix'])
+                
+                # Set the output filename.
+                output_filename = f"{section_name}_{time_suffix}"
+                cmd.append('-o')
+                cmd.append(output_filename)
+                
+                # Appending an empty string will cause the ros2 bag record to consider the space as a topic
+                # and introduce an error.
+                if len(command_dict['suffix']) > 0:
+                    cmd.extend(command_dict['suffix'])
+                
+                # self.get_logger().warn(f"Running command: {' '.join(cmd)}")
+                # self.get_logger().warn(f"Running command: {cmd}")
+                
+                self.process[section_name] = dict()
+                self.process[section_name]['process'] = subprocess.Popen(cmd) #, stdin=subprocess.PIPE
+
+                self.process[section_name]['cmd'] = cmd
+                self.process[section_name]['output_filename'] = output_filename
+                self.get_logger().warn(f"Started Recording Section {section_name} with PID {self.process[section_name]['process'].pid} to {output_filename}")
+
+    def terminate_proc_and_children(self, pid, cmdline, subprocess_cmd : subprocess.Popen):
+        
+        # try:
+        #     self.get_logger().warn(f"Getting info of pid {pid}")
+        #     proc = psutil.Process(pid)
+        #     for child_proc in proc.children(recursive=True):
+        #         self.get_logger().warn(f"Killing child process {child_proc.pid} of recording PID {pid}")
+        #         child_proc.send_signal(signal.SIGINT)
+        #         child_proc.wait()
+        #     proc.send_signal(signal.SIGINT)
+        #     proc.wait()
+        # except Exception as e:
+        #     self.get_logger().error(f"Could not kill child processes of recording PID (PID number: {pid}), faced error {e}")
+        
+        # Temp fix of cannot stop logging.
+        try:
+            subprocess_cmd.send_signal(signal.SIGINT)
+            time.sleep(0.5)
+            subprocess_cmd.send_signal(signal.SIGTERM)
+            time.sleep(0.5)
+            subprocess_cmd.send_signal(signal.SIGKILL)
+            time.sleep(0.5)
+            subprocess_cmd.wait()
+        except Exception as e:
+            self.get_logger().error(f"Could not kill send INIT signal failed, faced error {e}")
+
+        # try: 
+        #     self.get_logger().warn(f"Communicating with subprocess command {subprocess_cmd.pid}")
+        #     subprocess_cmd.communicate(input=b'\n')
+        # except Exception as e:
+        #     self.get_logger().error(f"Could not communicate with subprocess command because of error {e}")
+            
+        # try:
+        #     proc = psutil.Process(pid)
+        #     self.get_logger().warn(f"Terminating recording PID {pid}")
+        #     proc.terminate()
+        #     proc.wait()
+        # except psutil.NoSuchProcess as e:
+        #     self.get_logger().info(f"Recorder has been killed, faced error {e}")
+        
+        # try:
+        #     for proc in psutil.process_iter():
+        #         if "record" in proc.name() and set(cmdline[2:]).issubset(proc.cmdline()):
+        #             self.get_logger().warn(f"Manually terminating recording process {proc.pid}")
+        #             proc.send_signal(subprocess.signal.SIGINT)
+        #             proc.wait()
+        #             if proc.is_running():
+        #                 self.get_logger().warn(f"Last attempt of killing recording process {proc.pid}")
+        #                 proc.kill()
+        #                 proc.wait()
+        # except Exception as e:
+        #     self.get_logger().error(f"Failed when trying to manually terminate any recording processes due to: {e}")
+            
+    def interrupt(self):
+        if self.active:
+            for section_name, process in self.process.items():
+                # process["process"] : subprocess.Popen # type: ignore
+                self.terminate_proc_and_children(process['process'].pid, process["cmd"], process["process"])
+                self.get_logger().info(f"Ending Recording of Section {section_name} with PID {process['process'].pid}")
+                self.get_logger().warn(f"Output filename: {process['output_filename']}")
+            self.active = False
+
+
+def main(args=None):
+    rclpy.init(args=args)
+    node = BagRecorderNode()
+    try:
+        rclpy.spin(node)
+    except KeyboardInterrupt:
+        node.interrupt()
+    finally:
+        node.destroy_node()
+        rclpy.try_shutdown()
+
+
+if __name__ == "__main__":
+    main()
