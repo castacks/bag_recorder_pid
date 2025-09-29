@@ -1,0 +1,54 @@
+bags:
+  tartandriver:
+    storage_config: mcap_qos.yaml
+    args:
+      -s: mcap
+      -d: 120
+    topics:
+      - /auto_cmd
+      - /dino_voxels_viz
+      - /feature_image
+      - /feature_pointcloud
+      - /goal_dynamixel_position
+      - /joy
+      - /local_navmap
+      - /mppi/viz
+      - /multisense/left/image_rect
+      - /multisense/left/image_rect_color
+      - /multisense/left/image_rect_color/camera_info
+      - /multisense/right/image_rect
+      - /multisense/right/image_rect/camera_info
+      - /multisense/status
+      - /mux/cmd
+      - /mux/intervention
+      - /next_waypoints/gps
+      - /next_waypoints/local
+      - /next_waypoints/odom
+      - /next_waypoint/gps
+      - /novatel/imu/data
+      - /odometry/filtered_odom
+      - /rosout
+      - /span/pose
+      - /span/status
+      - /superodometry/integrated_to_init
+      - /superodometry/velodyne_cloud_registered
+      - /talon/current_position
+      - /talon/status
+      - /talon/steering_angle
+      - /teleop_cmd
+      - /tf
+      - /tf_static
+      - /thermal_left/camera_info
+      - /thermal_left/ffc_status
+      - /thermal_left/image
+      - /thermal_left/image_processed
+      - /thermal_right/camera_info
+      - /thermal_right/ffc_status
+      - /thermal_right/image
+      - /thermal_right/image_processed
+      - /torch_coordinator/timing
+      - /velodyne_1/velodyne_packets
+      - /velodyne_1/velodyne_points
+      - /velodyne_2/velodyne_packets
+      - /velodyne_2/velodyne_points
+      - /viz/selected_mission

@@ -1,9 +1,10 @@
+
+import os
+
 from launch import LaunchDescription
 from launch.actions import DeclareLaunchArgument
 from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import Node
-
-import os
 from ament_index_python.packages import get_package_share_directory
 
 def generate_launch_description():
@@ -24,7 +25,7 @@ def generate_launch_description():
     
     cfg_path_arg = DeclareLaunchArgument(
         'cfg_path',
-        default_value=os.path.join(pkg_dir, 'config', 'cfg.yaml'),
+        default_value=os.path.join(pkg_dir, 'config', 'tartandriver.yaml'),
         description='Configuration file for bag record pid'
     )
     
@@ -34,8 +35,8 @@ def generate_launch_description():
         description='Logging directory'
     )
     
-    mcap_qos_dir_arg = DeclareLaunchArgument(
-        'mcap_qos_dir',
+    storage_config_dir_arg = DeclareLaunchArgument(
+        'storage_config_dir',
         default_value=os.path.join(pkg_dir, 'config'),
         description='MCAP QoS directory'
     )
@@ -43,9 +44,23 @@ def generate_launch_description():
     best_effort_qos_sub_arg = DeclareLaunchArgument(
         'best_effort_qos_sub',
         default_value=LaunchConfiguration('best_effort_qos_sub', default=True),
-        description='Toggle Best-Effort QoS Setting of Subscriber'
+        description='Toggle Best-Effort QoS Setting of Subscriber. This is only used if in Heartbeat mode.'
     )
 
+    heartbeat_mode_arg = DeclareLaunchArgument(
+        'heartbeat_mode',
+        default_value=LaunchConfiguration('heartbeat_mode', default=False),
+        description='Know when to bag by listening to a heartbeat, like if interfaced with a GUI'
+    )
+
+    node_param_keys = [
+        "cfg_path",
+        "output_dir",
+        "storage_config_dir",
+        "best_effort_qos_sub",
+        "heartbeat_mode",
+    ]
+    node_params = {k: LaunchConfiguration(k) for k in node_param_keys}
 
     # Create the node with launch configurations
     bag_record_node = Node(
@@ -53,12 +68,7 @@ def generate_launch_description():
         executable='bag_record_node',
         name=LaunchConfiguration('node_name'),
         namespace=LaunchConfiguration('namespace'),
-        parameters=[{
-            'cfg_path': LaunchConfiguration('cfg_path'),
-            'output_dir': LaunchConfiguration('output_dir'),
-            'mcap_qos_dir': LaunchConfiguration('mcap_qos_dir'),
-            'best_effort_qos_sub': LaunchConfiguration('best_effort_qos_sub')
-        }],
+        parameters=[node_params],
         output='screen'
     )
 
@@ -68,9 +78,9 @@ def generate_launch_description():
         node_name_arg,
         cfg_path_arg,
         output_dir_arg,
-        mcap_qos_dir_arg,
+        storage_config_dir_arg,
         best_effort_qos_sub_arg,
-        # Add the node
+        heartbeat_mode_arg,
         bag_record_node
     ])
 

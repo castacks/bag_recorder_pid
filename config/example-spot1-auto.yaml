@@ -7,11 +7,9 @@
 sections:
   gps_lidar_spot_depth_status:
     mcap_qos: mcap_qos.yaml
-    args: 
-      - -b
-      - 4000000000 # ~4GB
-      - --max-cache-size 
-      - 1073741824 # 1GB
+    args:
+      -b: 4000000000 # ~4GB
+      --max-cache-size: 1073741824 # 1GB
     topics:
       - /parameter_events
       - /rosout
@@ -80,11 +78,9 @@ sections:
       - spot/depth/right/image
   spot_rgb:
     mcap_qos: mcap_qos.yaml
-    args: 
-      - -b
-      - 4000000000 # ~4GB
-      - --max-cache-size 
-      - 1073741824 # 1GB
+    args:
+      -b: 4000000000 # ~4GB
+      --max-cache-size: 1073741824 # 1GB
     topics:
       - spot/camera/back/camera_info
       - spot/camera/back/image
