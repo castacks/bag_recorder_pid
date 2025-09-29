@@ -11,6 +11,7 @@ import os
 import rclpy
 from rclpy.qos import QoSProfile, QoSReliabilityPolicy
 from datetime import datetime
+import importlib
 
 class BagRecorderNode(Node):
     """
@@ -36,7 +37,11 @@ class BagRecorderNode(Node):
         self.heartbeat_mode = self.get_parameter("heartbeat_mode").get_parameter_value().bool_value
         
         self.active = False
+
         self.cfg = yaml.safe_load(open(self.cfg_path))
+        self.pre_hooks = {k: [] for k in self.cfg['bags']}  # List of processing functions per bag: fn(node)
+        self.post_hooks = {k: [] for k in self.cfg['bags']}
+        self.load_hooks()
 
         # TODO: check if the output directory exists.
         # Exit if it does not exist.
@@ -78,17 +83,21 @@ class BagRecorderNode(Node):
             # Run on init
             self.run()
 
-    def pre_bag(self):
+    def pre_logger(self):
         """
         Run any desired code before bagging
         """
-        pass
+        for k, bag_hooks in self.pre_hooks.items():
+            for pre_fn in bag_hooks:
+                pre_fn(self)
 
-    def post_bag(self):
+    def post_logger(self):
         """
         Run any desired code after bagging
         """
-        pass
+        for k, bag_hooks in self.post_hooks.items():
+            for post_fn in bag_hooks:
+                post_fn(self)
 
     def add_topics(self):
         namespace = self.get_namespace()
@@ -138,15 +147,34 @@ class BagRecorderNode(Node):
         else:
             self.interrupt()
 
+    def load_hooks(self):
+        for k, cfg in self.cfg['bags'].items():
+            hooks = cfg.get("hooks", {})
+            pre_hooks = hooks.get('pre_logger', [])
+            post_hooks = hooks.get('post_logger', [])
+            for mod_name in pre_hooks:
+                mod = importlib.import_module(mod_name)
+                if hasattr(mod, "pre_logger"):
+                    self.pre_hooks[k].append(mod.pre_logger)
+                    self.get_logger().info(f"Registered hooks from {mod_name}")
+                else:
+                    self.get_logger().error(f"Module {mod_name} has no pre_logger()")
+            for mod_name in post_hooks:
+                mod = importlib.import_module(mod_name)
+                if hasattr(mod, "post_logger"):
+                    self.post_hooks[k].append(mod.post_logger)
+                    self.get_logger().info(f"Registered hooks from {mod_name}")
+                else:
+                    self.get_logger().error(f"Module {mod_name} has no post_logger()")
+
     def run(self):
         if not self.active:
             self.active = True
 
             time_suffix = f"{datetime.now().strftime('%Y%m%d_%H%M%S')}"
 
-            self.pre_bag()
-
             for bag_name, command_dict in self.commands.items():
+                self.pre_logger()
                 cmd = copy.deepcopy(command_dict['prefix'])
 
                 # Set the output filename.
@@ -160,7 +188,7 @@ class BagRecorderNode(Node):
                     cmd += command_dict['suffix']
 
                 self.process[bag_name] = dict()
-                self.process[bag_name]['process'] = subprocess.Popen(cmd)
+                self.process[bag_name]['process'] = subprocess.Popen(cmd, preexec_fn=os.setsid)
 
                 self.process[bag_name]['cmd'] = cmd
                 self.process[bag_name]['output_filename'] = output_filename
@@ -168,24 +196,29 @@ class BagRecorderNode(Node):
 
     def terminate_proc_and_children(self, subprocess_cmd: subprocess.Popen):
         try:
-            subprocess_cmd.send_signal(signal.SIGINT)
-            time.sleep(0.5)
-            subprocess_cmd.send_signal(signal.SIGTERM)
-            time.sleep(0.5)
-            subprocess_cmd.send_signal(signal.SIGKILL)
-            time.sleep(0.5)
-            subprocess_cmd.wait()
+            # Send SIGINT to the process group
+            os.killpg(os.getpgid(subprocess_cmd.pid), signal.SIGINT)
+            # Wait a short period
+            subprocess_cmd.wait(timeout=5)
+        except subprocess.TimeoutExpired:
+            # If still alive, escalate
+            try:
+                os.killpg(os.getpgid(subprocess_cmd.pid), signal.SIGTERM)
+                subprocess_cmd.wait(timeout=2)
+            except subprocess.TimeoutExpired:
+                os.killpg(os.getpgid(subprocess_cmd.pid), signal.SIGKILL)
+                subprocess_cmd.wait()
         except Exception as e:
-            self.get_logger().error(f"Could not kill send INIT signal failed, faced error {e}")
+            if rclpy.ok():
+                self.get_logger().error(f"Failed to terminate process: {e}")
 
     def interrupt(self):
         if self.active:
             for bag_name, process in self.process.items():
-                # process["process"] : subprocess.Popen # type: ignore
                 self.terminate_proc_and_children(process["process"])
                 self.get_logger().info(f"Ending Recording of bag {bag_name} with PID {process['process'].pid}")
                 self.get_logger().warn(f"Output filename: {process['output_filename']}")
-                self.post_bag()
+            self.post_logger()
             self.active = False
 
 

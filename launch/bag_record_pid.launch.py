@@ -69,7 +69,7 @@ def generate_launch_description():
         name=LaunchConfiguration('node_name'),
         namespace=LaunchConfiguration('namespace'),
         parameters=[node_params],
-        output='screen'
+        output='screen',
     )
 
     return LaunchDescription([

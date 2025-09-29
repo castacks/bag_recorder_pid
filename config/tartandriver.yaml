@@ -4,6 +4,11 @@ bags:
     args:
       -s: mcap
       -d: 120
+    hooks:
+      pre_logger:
+        - bag_record_pid.example_routine
+      post_logger:
+        - bag_record_pid.example_routine
     topics:
       - /auto_cmd
       - /dino_voxels_viz
