@@ -128,7 +128,20 @@ class BagRecorderNode(Node):
             # Add the topics to the command at the end.
             self.get_logger().warn(f"Searching for bag topics {bag_name} topics:")
             for topic in bag_config['topics']:
-                if topic.startswith('/'):
+                # Env var with many topics
+                if topic.startswith('$'):
+                    env_key = topic[1:]
+                    expanded = os.getenv(env_key, "")
+                    if expanded.strip() == "":
+                        self.get_logger().error(f"Env var {env_key} not set or empty")
+                        continue
+                    # Split if the env var holds multiple topics separated by spaces
+                    for t in expanded.split(" "):
+                        self.commands[bag_name]['suffix'].append(t)
+                        self.get_logger().warn(f"{t}")
+                    continue
+                # Single topic
+                elif topic.startswith('/'):
                     full_topic_name = topic
                 else:
                     full_topic_name = f"{namespace}/{topic}"
