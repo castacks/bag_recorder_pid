@@ -28,7 +28,8 @@ setup(
     tests_require=['pytest'],
     entry_points={
         'console_scripts': [
-            'bag_record_node = bag_record_pid.bag_record_node:main'
+            'bag_record_node = bag_record_pid.bag_record_node:main',
+            'topic_monitor = bag_record_pid.topic_monitor:main'
         ],
     },
 )

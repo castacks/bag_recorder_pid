@@ -1,0 +1,35 @@
+topic_rates:
+  - topic: "/superodometry/integrated_to_init"
+    type: "nav_msgs.msg.Odometry"
+    expected_rate: 100.0
+
+  - topic: "/odometry/filtered_odom"
+    type: "nav_msgs.msg.Odometry"
+    expected_rate: 50.0
+
+  - topic: "/velodyne_1/velodyne_points"
+    type: "sensor_msgs.msg.PointCloud2"
+    expected_rate: 10.0
+
+  - topic: "/velodyne_2/velodyne_points"
+    type: "sensor_msgs.msg.PointCloud2"
+    expected_rate: 10.0
+
+  - topic: "/multisense/left/image_rect_color"
+    type: "sensor_msgs.msg.Image"
+    expected_rate: 10.0
+
+  - topic: "/thermal_left/image_processed"
+    type: "sensor_msgs.msg.Image"
+    expected_rate: 10.0
+
+  - topic: "/thermal_right/image_processed"
+    type: "sensor_msgs.msg.Image"
+    expected_rate: 10.0
+
+  - topic: "/shock/pos"
+    type: "racepak_interfaces.msg.RpShockSensors"
+    expected_rate: 10.0
+
+tolerance: .1
+time_window: 5.0
