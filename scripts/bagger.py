@@ -1,19 +1,22 @@
 #!/usr/bin/env python3
 
 import argparse
-import os
-import sys
-import yaml
-import importlib
 import functools
 import inspect
+import importlib
 import rclpy
 import traceback
+from typing import List, Dict, Any
+import yaml
 
-from ament_index_python.packages import get_package_share_directory
 from bag_record_pid.bag_record_node import BagRecorderNode
 
-def load_hooks(pre_hooks, post_hooks, config):
+# Routines
+def load_routines(pre_routines: List[callable], post_routines: List[callable], config: dict):
+    """
+    Load routines from config and initialize as partial functions
+    with kwargs. Filter any non-existent kwargs from the function
+    """
     def import_callable(path: str):
         """
         Import a function inside it.
@@ -35,9 +38,9 @@ def load_hooks(pre_hooks, post_hooks, config):
         return getattr(mod, fn_name)
 
 
-    hooks = config['common'].get("hooks", {})
-    pre_h = hooks.get('pre_logger', [])
-    post_h = hooks.get('post_logger', [])
+    routines = config['common'].get("routines", {})
+    pre_h = routines.get('pre_logger', [])
+    post_h = routines.get('post_logger', [])
 
     for ref in pre_h:
         fn_type = ref.get('type', "")
@@ -46,7 +49,7 @@ def load_hooks(pre_hooks, post_hooks, config):
 
         if callable(fn):
             kwargs = filter_kwargs(fn, kwargs)
-            pre_hooks.append(functools.partial(fn, **kwargs))
+            pre_routines.append(functools.partial(fn, **kwargs))
             print(f"Registered pre_logger function {fn_type}")
         else:
             raise ValueError(f"{ref} is not callable")
@@ -57,26 +60,56 @@ def load_hooks(pre_hooks, post_hooks, config):
         fn = import_callable(fn_type)
         if callable(fn):
             kwargs = filter_kwargs(fn, kwargs)
-            post_hooks.append(functools.partial(fn, **kwargs))
+            post_routines.append(functools.partial(fn, **kwargs))
             print(f"Registered post_logger function {fn_type}")
         else:
             raise ValueError(f"{fn_type} is not callable")
 
-def pre_logger(pre_hooks):
+def run_routines(routines: List[callable]):
     """
     Run any desired code before bagging
     """
-    for pre_fn in pre_hooks:
-        pre_fn()
+    for fn in routines:
+        fn()
 
-def post_logger(post_hooks):
+# Nodes
+def run_node(config: dict):
     """
-    Run any desired code after bagging
+    Run ROS2 node by instantiating its class and spinning it. The node can die
+    in two ways:
+    1. User ctrl+C's it to stop bagging (success)
+    2. Node crashes because bagging fails (not success)
     """
-    for post_fn in post_hooks:
-        post_fn()
+    rclpy.init()
+    node = None
+    success = True
+    # Spin not during bagging
+    try:
+        node = BagRecorderNode(config)
+        rclpy.spin(node)
+    # If Ctrl+C human interrupt, bag success
+    except KeyboardInterrupt:
+        if node is not None:
+            node.interrupt()
+    # If other exception, bag failure (Don't do post proc)
+    except Exception:
+        # Catch bag failure or other runtime errors
+        if node is not None:
+            node.interrupt()
+        traceback.print_exc()
+        success = False
+    # Ensure node is dead
+    finally:
+        if node is not None:
+            try:
+                node.destroy_node()
+            except Exception:
+                pass
+        rclpy.try_shutdown()
+    return success
 
-def filter_kwargs(func, kwargs):
+# CLI/config stuff
+def filter_kwargs(func: callable, kwargs: dict):
     """
     Because common args are copied into all sub-dictionary params, filter only
     valid arms in the function definition to avoid error.
@@ -84,41 +117,65 @@ def filter_kwargs(func, kwargs):
     sig = inspect.signature(func)
     return {k: v for k, v in kwargs.items() if k in sig.parameters}
 
-def convert_key(key):
+def convert_key(key: str):
+    """
+    Convert to proper key representation
+    """
     short_to_long_args = {
         's': 'storage',
         'o': 'output',
-        'd': 'max_bag_duration',
-        'b': 'max_bag_size'
+        'd': 'max-bag-duration',
+        'b': 'max-bag-size'
     }
-    key = key.strip('-')
+    key = key.strip('-').replace('_','-') # get into ros2 verb cli fmt
     if key in short_to_long_args:
         return short_to_long_args[key.strip('-')]
     return key
 
-def parse_config(config, args):
-    cargs = config['common']['args']
-    for key in list(cargs.keys()):
-       cargs[convert_key(key)] = cargs.pop(key)
+def parse_config(config: dict, args: argparse.Namespace):
+    """
+    Pre-proc of config. Do things like
+    1. Convert any key representations to base ('-s' -> 'storage')
+    2. Override config with CLI args
+    3. Update routine and bag args with config common args
+    """
+    common_config = config['common']
+    for key in list(common_config['args'].keys()):
+        common_config['args'][convert_key(key)] = common_config['args'].pop(key)
 
-    # Override with CLI args
-    for key in vars(args).keys():
-        val = getattr(args, key, None)
-        if val is not None:
-            cargs[key] = val
-    
-    # Update block params with common
-    # Give hooks default args
-    for key, hooks in config['common']['hooks'].items():
-        for hook in hooks:
-            hook['args'] = config['common']['args'] | hook.get('args', {})
-    # Give bags default args
-    for key in config['bags'].keys():
-        config['bags'][key] = config['common'] | config['bags'][key]
-    return config # not actually needed
+    cli_args = {convert_key(k): v for k, v in vars(args).items() if v is not None}
 
-def main():
-    parser = argparse.ArgumentParser(description="ROS2 bag record wrapper with pre/post hooks")
+    for _, routines in common_config['routines'].items():
+        for hook in routines:
+            hook['args'] = common_config['args'] | hook.get('args', {}) | cli_args
+
+    for _, bag_cfg in config['bags'].items():
+        bag_cfg['args'] = common_config['args'] | bag_cfg.get('args', {}) | cli_args
+
+    return config
+
+def main(args: argparse.Namespace):
+    """
+    Run bagger wrapper
+    """
+    # Load config
+    with open(args.config, "r") as f:
+        config = yaml.safe_load(f)
+    config = parse_config(config, args)
+
+    # Routines
+    pre_routines = []
+    post_routines = []
+    load_routines(pre_routines, post_routines, config)
+
+    run_routines(pre_routines)
+    success = run_node(config)
+    if not success:
+        return
+    run_routines(post_routines)
+
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser(description="ROS2 bag record wrapper with pre/post routines")
     parser.add_argument("-c", "--config",
                         type=str,
                         required=True,
@@ -149,52 +206,4 @@ def main():
                         required=False,
                         help="Path to a yaml file defining storaeg specific configurations.")
     args = parser.parse_args()
-
-    # Load config
-    with open(args.config, "r") as f:
-        config = yaml.safe_load(f)
-    config = parse_config(config, args)
-
-    # Hooks
-    pre_hooks = []
-    post_hooks = []
-    load_hooks(pre_hooks, post_hooks, config)
-
-    # Pre-hooks
-    pre_logger(pre_hooks)
-
-    # Start ROS node
-    rclpy.init()
-    node = None
-    success = True
-    # Spin not during bagging
-    try:
-        node = BagRecorderNode(config)
-        rclpy.spin(node)
-    # If Ctrl+C human interrupt, bag success
-    except KeyboardInterrupt:
-        if node is not None:
-            node.interrupt()
-    # If other exception, bag failure (Don't do post proc)
-    except Exception:
-        # Catch bag failure or other runtime errors
-        if node is not None:
-            node.interrupt()
-        traceback.print_exc()
-        success = False
-    # Ensure node is dead
-    finally:
-        if node is not None:
-            try:
-                node.destroy_node()
-            except Exception:
-                pass
-        rclpy.try_shutdown()
-
-    # Post-hooks
-    if not success:
-        return
-    post_logger(post_hooks)
-
-if __name__ == "__main__":
-    main()
+    main(args)

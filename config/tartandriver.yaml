@@ -1,15 +1,19 @@
+# See example.yaml if unfamiliar with how to use.
+
+common:
+  args:
+    storage: mcap
+    max-bag-duration: 120
+    # storage-config-file: /home/tartandriver/tartandriver_ws/src/core/bag_recorder_pid/config/mcap_qos.yaml
+  routines:
+    pre_logger:
+      - type: routines.example_routine.pre_logger
+    post_logger:
+      - type: routines.example_routine.post_logger
+      - type: routines.freq.bag_freq
+
 bags:
   tartandriver:
-    storage_config: mcap_qos.yaml
-    args:
-      -s: mcap
-      -d: 120
-    hooks:
-      pre_logger:
-        - routines.example_routine.pre_logger
-      post_logger:
-        - routines.example_routine.post_logger
-        - routines.freq.bag_freq
     topics:
       - $ALL_TOPICS
       # - $ACTUATION_TOPICS
@@ -20,4 +24,3 @@ bags:
       # - $SENSOR_TOPICS
       # - $THERMAL_TOPICS
       # - $AUTO_TOPICS
-

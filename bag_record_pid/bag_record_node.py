@@ -106,7 +106,7 @@ class BagRecorderNode(Node):
                     env_key = topic[1:]
                     expanded = os.getenv(env_key, "")
                     if expanded.strip() == "":
-                        self.get_logger().error(f"Env var {env_key} not set or empty")
+                        self.get_logger().warn(f"Env var {env_key} not set or empty")
                         continue
                     # Split if the env var holds multiple topics separated by spaces
                     for t in expanded.split(" "):
@@ -116,8 +116,10 @@ class BagRecorderNode(Node):
                 # Single topic
                 elif topic.startswith('/'):
                     full_topic_name = topic
-                else:
+                elif namespace != "/":
                     full_topic_name = f"{namespace}/{topic}"
+                else:
+                    full_topic_name = topic
 
                 self.commands[bag_name]['suffix'].append(full_topic_name)
 
@@ -145,7 +147,7 @@ class BagRecorderNode(Node):
                 # and introduce an error.
                 if len(command_dict['suffix']) > 0:
                     cmd += command_dict['suffix']
-                if len(command_dict['pseudo_suffix']) > 0:
+                elif len(command_dict['pseudo_suffix']) > 0:
                     psuedo_cmd += command_dict['pseudo_suffix']
 
                 if psuedo_cmd != command_dict['prefix']:

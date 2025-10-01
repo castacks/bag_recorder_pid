@@ -7,18 +7,18 @@
 #     else:
 #         raise Exception("No terminal attached — cannot read user input")
 
-def pre_logger():
-    print("HELLO!!!")
-    print("HELLO!!!")
-    print("HELLO!!!")
-    print("HELLO!!!")
-    print("HELLO!!!")
-    print("HELLO!!!")
+def pre_logger(data: str="HELLO"):
+    print(f"{data}!!!")
+    print(f"{data}!!!")
+    print(f"{data}!!!")
+    print(f"{data}!!!")
+    print(f"{data}!!!")
+    print(f"{data}!!!")
 
-def post_logger():
-    print(f"DONE 1")
-    print(f"DONE 2")
-    print(f"DONE 3")
-    print(f"DONE 4")
-    print(f"DONE 5")
-    print(f"DONE 6")
+def post_logger(data: str="GOODBYE :("):
+    print(f"{data} 1")
+    print(f"{data} 2")
+    print(f"{data} 3")
+    print(f"{data} 4")
+    print(f"{data} 5")
+    print(f"{data} 6")

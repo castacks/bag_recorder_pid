@@ -1,0 +1,51 @@
+# These are common args which all bag args will inherit. Bag args always override
+# common args, if present. All args are override by CLI args. The order of
+# importance goes: CLI args > bag args > common args
+common:
+  # These are ros2 bag args. For example -s (--storage), -o (--output), etc.
+  # It is simply flag: value. For example "--storage: mcap". There is compatibility
+  # with all CLI variants of the arg too. Using the storage example, a "-s", "s",
+  # "--storage", or "storage" key all have the same functionality
+
+  # If there are any errors with your args, the config parser or ros2 bag record
+  # command will catch it and prevent any post-logging.
+  args:
+    storage: mcap
+    max-bag-duration: 120
+    # output will always be created if not specified in here or CLI
+
+  # These are routines for pre and post bagging. You can have as many pre and post
+  # bag routines as you want. These routines are just like `import` paths, so you
+  # can import from anywhere, as long as it is callable.
+  
+  # Each routine has optional args which can be passed. These args also get
+  # populated from common. The config parser will filter valid kwargs, so do
+  # not worry about need all args in your function definition.
+  routines:
+    pre_logger:
+      - type: routines.example_routine.pre_logger
+        args:
+          data: hello there
+    post_logger:
+      - type: routines.example_routine.post_logger
+        args:
+          data: general kenobi
+      - type: routines.freq.bag_freq
+
+# These define the bags we want. You can define the topics you want to bag, as
+# well as any special args for this bag.
+# WARNING: Only tested for single-bag currently.
+bags:
+  bag_1:
+    args:
+      # This will override the bag duration from the common args
+      max-bag-duration: 10
+    # Topics can be provided using individual topics or env vars of lists of
+    # topics like $ALL_TOPICS.
+    topics:
+      - $ALL_TOPICS
+      - /new_topic1
+      - new_topic2
+
+  # Not tested yet
+  # bag_2: {}
