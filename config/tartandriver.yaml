@@ -6,9 +6,10 @@ bags:
       -d: 120
     hooks:
       pre_logger:
-        - bag_record_pid.example_routine
+        - routines.example_routine.pre_logger
       post_logger:
-        - bag_record_pid.example_routine
+        - routines.example_routine.post_logger
+        - routines.freq.bag_freq
     topics:
       - $ALL_TOPICS
       # - $ACTUATION_TOPICS
