@@ -1,0 +1,17 @@
+---
+#nested fields are discouraged (?)
+# data_folder: /home/physics_atv/rosbags
+# experiment_name: tartandrive
+conditions:
+- afternoon
+- cloudy
+context:
+- collect
+course:
+- meadows
+- turnpike
+driver: Matthew
+number_people: 2
+robot: yamaha_viking
+max_throttle: .75
+drive: awd

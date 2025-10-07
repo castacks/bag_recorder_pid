@@ -7,11 +7,18 @@ common:
     # storage-config-file: /home/tartandriver/tartandriver_ws/src/core/bag_recorder_pid/config/mcap_qos.yaml
   routines:
     pre_logger:
-      - type: routines.example_routine.pre_logger
+      # - type: routines.example_routine.pre_logger
+      - type: routines.metadata.update_metadata
+        args:
+            metadata_dir: /home/tartandriver/tartandriver_ws/src/core/bag_recorder_pid/metadata
+            template: data_collect.yaml
     post_logger:
-      - type: routines.example_routine.post_logger
+      # - type: routines.example_routine.post_logger
       - type: routines.freq.bag_freq
-
+      - type: routines.metadata.store_metadata #placing as a post since i'm assuming the bag command is what creates the directory
+        args:
+            metadata_dir: /home/tartandriver/tartandriver_ws/src/core/bag_recorder_pid/metadata
+            template: data_collect.yaml
 bags:
   tartandriver:
     topics:
