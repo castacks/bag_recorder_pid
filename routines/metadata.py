@@ -3,7 +3,6 @@ import yaml
 import argparse
 import csv
 import os
-import questionary
 import subprocess
 import shutil
 
@@ -19,7 +18,7 @@ console = Console()
 def pretty_print_yaml(data):
     """Pretty-print YAML with syntax highlighting."""
     yaml_str = yaml.dump(data, sort_keys=False, default_flow_style=False)
-    console.print(Panel(Syntax(yaml_str, "yaml", theme="monokai", line_numbers=False),
+    console.print(Panel(Syntax(yaml_str, "yaml", theme="ayu", line_numbers=False),
                         title="Current Configuration", expand=False))
 
 def edit_in_editor(yaml_path):
