@@ -4,9 +4,10 @@ import argparse
 import functools
 import inspect
 import importlib
+import os
 import rclpy
 import traceback
-from typing import List, Dict, Any
+from typing import List
 import yaml
 
 from bag_record_pid.bag_record_node import BagRecorderNode
@@ -109,6 +110,55 @@ def run_node(config: dict):
     return success
 
 # CLI/config stuff
+def next_foldername(path: str, prefix: bool=False, step: int=1, digits: int=6):
+    path = path.rstrip('/')
+    dir, base_name = os.path.split(path)
+    num = next_num(dir, prefix, digits, step)
+    if prefix:
+        return os.path.join(dir, f"{num:0{digits}d}_{base_name}")
+    return os.path.join(dir, f"{base_name}_{num:0{digits}d}")
+
+def next_num(dir: str, prefix: bool, digits: int, step: int = 1, base_name=None):
+    """
+    Find the next number to create inside a dir framed like so:
+    dir
+    - 000_foldername | 000_filename.ext | filename_000.ext
+    - 001_foldername | 001_filename.ext | filename_001.ext
+    ...
+
+    Assumes number is separated by "_".
+
+    Args:
+        dir: Directory to search
+        prefix: If number is a prefix or suffix to content inside dir
+        digits: How many digits the number has
+        step: How much to increase number by
+        base_name: Base name of the file to search for. If provided, will
+                      only search files with base_name in string.
+    """
+    ni = 0 if prefix else -1
+    dir = os.getcwd() if dir == "" else dir
+    for root, dirs, files in os.walk(dir):
+        search = dirs
+
+        # Filter search by base_name:
+        if base_name is not None:
+            # Search for base name explicitly. Previously base_name in s would
+            # yield bad results i.e. "mse_full" is in "rmse_full" and so the
+            # number retrieval would be wrong. Still keep full filename in
+            # search though, so the number can be parsed and updated
+            excl_num = slice(1, None) if prefix else slice(None, -1)
+            search = [s for s in search if base_name == "_".join(s.split('_')[excl_num])]
+            
+        # find valid candidates
+        valid_nums = [int(tok[:digits]) for s in search for tok in [s.split('_')[ni]] if len(tok) == digits and tok[:digits].isdigit()]
+        if len(valid_nums) == 0:
+            return 0 # First content in folder
+
+        # Find the max file number given using prefix/suffix logic with number of digits of all valid candidates
+        return step + max(valid_nums, default=0)
+        return step + max([int(s.split('_')[0 if prefix else -1][:digits]) for s in search])
+
 def filter_kwargs(func: callable, kwargs: dict):
     """
     Because common args are copied into all sub-dictionary params, filter only
@@ -145,6 +195,11 @@ def parse_config(config: dict, args: argparse.Namespace):
 
     cli_args = {convert_key(k): v for k, v in vars(args).items() if v is not None}
 
+    # Handle pre-pending to bag name
+    if not args.no_prepend:
+        cli_args['output'] = next_foldername(cli_args['output'], prefix=True, digits=2)
+    print(cli_args['output'])
+
     for _, routines in common_config['routines'].items():
         for hook in routines:
             hook['args'] = common_config['args'] | hook.get('args', {}) | cli_args
@@ -162,6 +217,7 @@ def main(args: argparse.Namespace):
     with open(args.config, "r") as f:
         config = yaml.safe_load(f)
     config = parse_config(config, args)
+    return 0
 
     # Routines
     pre_routines = []
@@ -180,6 +236,10 @@ if __name__ == "__main__":
                         type=str,
                         required=True,
                         help="Path to YAML config with bag definitions")
+    parser.add_argument("--no-prepend",
+                        action='store_true',
+                        required=False,
+                        help="If no-prepend, will not preprend a number to bag name")
     parser.add_argument("-o", "--output",
                         type=str,
                         default=None,
