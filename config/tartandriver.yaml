@@ -4,7 +4,6 @@ common:
   args:
     storage: mcap
     max-bag-duration: 120
-    # storage-config-file: /home/tartandriver/tartandriver_ws/src/core/bag_recorder_pid/config/mcap_qos.yaml
   routines:
     pre_logger:
       # - type: routines.example_routine.pre_logger

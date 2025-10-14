@@ -4,9 +4,10 @@ import argparse
 import functools
 import inspect
 import importlib
+import os
 import rclpy
 import traceback
-from typing import List, Dict, Any
+from typing import List
 import yaml
 
 from bag_record_pid.bag_record_node import BagRecorderNode
@@ -27,8 +28,15 @@ def load_routines(pre_routines: List[callable], post_routines: List[callable], c
             try:
                 mod = importlib.import_module(module_name)
                 break
-            except ModuleNotFoundError:
-                continue
+            except ModuleNotFoundError as e:
+                if e.name == module_name:
+                    # The module does not exist. Try shortening
+                    # ex: `routines.freq.bag_freq` not found but `routines.freq` is
+                    continue  # try a shorter prefix
+                else:
+                    # The module exists, but failed to load submodule properly
+                    print(f"[!] Failed inside valid module: {module_name} has missing submodule '{e.name}'")
+                    raise  # this is a real internal import error — stop trying
         else:
             raise ModuleNotFoundError(f"Cannot import {path}")
 
@@ -109,6 +117,54 @@ def run_node(config: dict):
     return success
 
 # CLI/config stuff
+def next_foldername(path: str, prefix: bool=False, step: int=1, digits: int=6):
+    path = path.rstrip('/')
+    dir, base_name = os.path.split(path)
+    num = next_num(dir, prefix, digits, step)
+    if prefix:
+        return os.path.join(dir, f"{num:0{digits}d}_{base_name}")
+    return os.path.join(dir, f"{base_name}_{num:0{digits}d}")
+
+def next_num(dir: str, prefix: bool, digits: int, step: int = 1, base_name=None):
+    """
+    Find the next number to create inside a dir framed like so:
+    dir
+    - 000_foldername | 000_filename.ext | filename_000.ext
+    - 001_foldername | 001_filename.ext | filename_001.ext
+    ...
+
+    Assumes number is separated by "_".
+
+    Args:
+        dir: Directory to search
+        prefix: If number is a prefix or suffix to content inside dir
+        digits: How many digits the number has
+        step: How much to increase number by
+        base_name: Base name of the file to search for. If provided, will
+                      only search files with base_name in string.
+    """
+    ni = 0 if prefix else -1
+    dir = os.getcwd() if dir == "" else dir
+    for root, dirs, files in os.walk(dir):
+        search = dirs
+
+        # Filter search by base_name:
+        if base_name is not None:
+            # Search for base name explicitly. Previously base_name in s would
+            # yield bad results i.e. "mse_full" is in "rmse_full" and so the
+            # number retrieval would be wrong. Still keep full filename in
+            # search though, so the number can be parsed and updated
+            excl_num = slice(1, None) if prefix else slice(None, -1)
+            search = [s for s in search if base_name == "_".join(s.split('_')[excl_num])]
+            
+        # find valid candidates
+        valid_nums = [int(tok[:digits]) for s in search for tok in [s.split('_')[ni]] if len(tok) == digits and tok[:digits].isdigit()]
+        if len(valid_nums) == 0:
+            return 0 # First content in folder
+
+        # Find the max file number given using prefix/suffix logic with number of digits of all valid candidates
+        return step + max(valid_nums, default=0)
+
 def filter_kwargs(func: callable, kwargs: dict):
     """
     Because common args are copied into all sub-dictionary params, filter only
@@ -132,19 +188,28 @@ def convert_key(key: str):
         return short_to_long_args[key.strip('-')]
     return key
 
-def parse_config(config: dict, args: argparse.Namespace):
+def parse_config(config: dict, args: argparse.Namespace, rargs: argparse.Namespace):
     """
     Pre-proc of config. Do things like
     1. Convert any key representations to base ('-s' -> 'storage')
     2. Override config with CLI args
     3. Update routine and bag args with config common args
+
+    Args:
+        args (argparse.Namespace): script args not used for ros2 bag record command
+        rargs (argparse.Namespace): ros2 bag record args
     """
     common_config = config['common']
     for key in list(common_config['args'].keys()):
         common_config['args'][convert_key(key)] = common_config['args'].pop(key)
 
-    cli_args = {convert_key(k): v for k, v in vars(args).items() if v is not None}
+    cli_args = {convert_key(k): v for k, v in vars(rargs).items() if v is not None}
 
+    # Handle pre-pending to bag name
+    if not args.no_prepend:
+        cli_args['output'] = next_foldername(cli_args['output'], prefix=True, digits=2)
+
+    # Precedence order: cli > local cfg args > common cfg args (> means more precedence)
     for _, routines in common_config['routines'].items():
         for hook in routines:
             hook['args'] = common_config['args'] | hook.get('args', {}) | cli_args
@@ -154,14 +219,18 @@ def parse_config(config: dict, args: argparse.Namespace):
 
     return config
 
-def main(args: argparse.Namespace):
+def main(args: argparse.Namespace, rargs: argparse.Namespace):
     """
     Run bagger wrapper
+
+    Args:
+        args (argparse.Namespace): script args not used for ros2 bag record command
+        rargs (argparse.Namespace): ros2 bag record args
     """
     # Load config
     with open(args.config, "r") as f:
         config = yaml.safe_load(f)
-    config = parse_config(config, args)
+    config = parse_config(config, args, rargs)
 
     # Routines
     pre_routines = []
@@ -175,35 +244,44 @@ def main(args: argparse.Namespace):
     run_routines(post_routines)
 
 if __name__ == "__main__":
+    # Want to add more script args not used in the ros2 bag command? Edit this.
     parser = argparse.ArgumentParser(description="ROS2 bag record wrapper with pre/post routines")
     parser.add_argument("-c", "--config",
                         type=str,
                         required=True,
                         help="Path to YAML config with bag definitions")
-    parser.add_argument("-o", "--output",
+    parser.add_argument("--no-prepend",
+                        action='store_true',
+                        required=False,
+                        help="If no-prepend, will not preprend a number to bag name")
+    args, remaining = parser.parse_known_args()
+    
+    # Want to add more ROS args? Edit this.
+    ros_parser = argparse.ArgumentParser(description="ROS2 bag record arguments")
+    ros_parser.add_argument("-o", "--output",
                         type=str,
                         default=None,
                         required=False,
                         help="Path to YAML config with bag definitions")
-    parser.add_argument("-s", "--storage",
+    ros_parser.add_argument("-s", "--storage",
                         type=str,
                         default=None,
                         required=False,
                         help="Storage type")
-    parser.add_argument("-d", "--max-bag-duration",
+    ros_parser.add_argument("-d", "--max-bag-duration",
                         type=int,
                         default=None,
                         required=False,
                         help="Max bag duration")
-    parser.add_argument("-b", "--max-bag-size",
+    ros_parser.add_argument("-b", "--max-bag-size",
                         type=int,
                         default=None,
                         required=False,
                         help="Max bag size (in bytes) before bagfile will be split")
-    parser.add_argument("--storage-config-file",
+    ros_parser.add_argument("--storage-config-file",
                         type=str,
                         default=None,
                         required=False,
                         help="Path to a yaml file defining storaeg specific configurations.")
-    args = parser.parse_args()
-    main(args)
+    ros_args = ros_parser.parse_args(remaining)
+    main(args, ros_args)
