@@ -1,4 +1,5 @@
 ---
+#nested fields are discouraged (?)
 conditions:
 - afternoon
 - cloudy

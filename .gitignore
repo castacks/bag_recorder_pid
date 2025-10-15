@@ -1,1 +1,4 @@
 __pycache__
+
+# do not always publish modified metadata
+metadata
