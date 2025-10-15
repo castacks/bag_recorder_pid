@@ -42,7 +42,7 @@ def update_metadata(metadata_dir: str, template: str):
 
     choice = input("Is this configuration correct? (y/n/edit) ").strip().lower()
 
-    if choice in ("n", "edit"):
+    if choice in ("n", "edit", ""):
         edit_in_editor(metadata_path)
 
 def store_metadata(output: str, metadata_dir: str, template: str):
