@@ -9,8 +9,13 @@ import rclpy
 import traceback
 from typing import List
 import yaml
+from rich.console import Console
+from rich.panel import Panel
+from rich.syntax import Syntax
 
 from bag_record_pid.bag_record_node import BagRecorderNode
+
+console = Console()
 
 # Routines
 def load_routines(pre_routines: List[callable], post_routines: List[callable], config: dict):
@@ -243,9 +248,29 @@ def main(args: argparse.Namespace, rargs: argparse.Namespace):
         return
     run_routines(post_routines)
 
+def print_help_with_rich(script_parser, ros_parser):
+    """Pretty-print combined help for both parsers using Rich."""
+    console.print(Panel.fit(
+        "[bold cyan]ROS2 Bag Record Wrapper[/bold cyan]\n"
+        "Wrapper around `ros2 bag record` with pre/post routines.",
+        title="[bold white]Description[/bold white]",
+        border_style="cyan",
+    ))
+
+    # Script args section
+    console.print("[bold yellow]Script (ROS-Agnostic) Arguments:[/bold yellow]\n")
+    script_help = script_parser.format_help()
+    console.print(Syntax(script_help, "text", theme="ansi_dark", background_color="default"))
+
+    # ROS args section
+    console.print("\n[bold magenta]ROS2 Bag Record Arguments:[/bold magenta]\n")
+    ros_help = ros_parser.format_help()
+    console.print(Syntax(ros_help, "text", theme="ansi_dark", background_color="default"))
+
+
 if __name__ == "__main__":
     # Want to add more script args not used in the ros2 bag command? Edit this.
-    parser = argparse.ArgumentParser(description="ROS2 bag record wrapper with pre/post routines")
+    parser = argparse.ArgumentParser(add_help=False)
     parser.add_argument("-c", "--config",
                         type=str,
                         required=True,
@@ -254,10 +279,11 @@ if __name__ == "__main__":
                         action='store_true',
                         required=False,
                         help="If no-prepend, will not preprend a number to bag name")
+    parser.add_argument("-h", "--help", action="store_true")
     args, remaining = parser.parse_known_args()
     
     # Want to add more ROS args? Edit this.
-    ros_parser = argparse.ArgumentParser(description="ROS2 bag record arguments")
+    ros_parser = argparse.ArgumentParser(add_help=False)
     ros_parser.add_argument("-o", "--output",
                         type=str,
                         default=None,
@@ -283,5 +309,10 @@ if __name__ == "__main__":
                         default=None,
                         required=False,
                         help="Path to a yaml file defining storaeg specific configurations.")
+
+    if args.help:
+        print_help_with_rich(parser, ros_parser)
+        exit(0)
+
     ros_args = ros_parser.parse_args(remaining)
     main(args, ros_args)
