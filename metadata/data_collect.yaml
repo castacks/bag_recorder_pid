@@ -1,0 +1,15 @@
+---
+#nested fields are discouraged (?)
+conditions:
+- afternoon
+- cloudy
+context:
+- collect
+course:
+- meadows
+- turnpike
+driver: Matthew
+number_people: 2
+robot: yamaha_viking
+max_throttle: .75
+drive: awd
