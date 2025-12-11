@@ -27,9 +27,17 @@ topic_rates:
     type: "sensor_msgs.msg.Image"
     expected_rate: 10.0
 
-  - topic: "/shock/pos"
+  - topic: "/racepak/shock_pos"
     type: "racepak_interfaces.msg.RpShockSensors"
-    expected_rate: 10.0
+    expected_rate: 50.0
+
+  - topic: "/rtk_gps/rtcm"
+    type: "rtcm_msgs.msg.Message"
+    expected_rate: 9.0
+
+  - topic: "/rtk_gps/ekf/odometry_earth"
+    type: "nav_msgs.msg.Odometry"
+    expected_rate: 25.0
 
 tolerance: .1
 time_window: 5.0
