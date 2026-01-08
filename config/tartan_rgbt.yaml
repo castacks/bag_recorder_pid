@@ -58,6 +58,20 @@ sections:
       - /health/zed/status
       - /health/depth/frequency
       - /health/depth/status
+      - /health/lidar/frequency
+      - /health/lidar/status
+      - /health/radar_data/frequency
+      - /health/radar_data/status
+      - /ubx_nav_pvt
+      - /fix
+      - /ubx_nav_status
+      - /ubx_rxm_rtcm
+      - /ntrip_client/rtcm
+      - /xwr/iq
+      - /xwr/info
+      - /ouster/scan
+      - /ouster/imu
+      - /ouster/metadata
 
 #skipped topics 
 # - /zed/zed_node/right_raw_gray/camera_info
