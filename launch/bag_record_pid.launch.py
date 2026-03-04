@@ -87,6 +87,6 @@ def generate_launch_description():
         best_effort_qos_sub_arg,
         # Add the node
         bag_record_node,
-        trigger_using_gpio
+        # trigger_using_gpio
     ])
 
