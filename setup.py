@@ -31,6 +31,7 @@ setup(
             'bag_record_node = bag_record_pid.bag_record_node:main',
             'trigger_using_gpio = bag_record_pid.trigger_using_gpio:main',
             'teensy_wave_trigger = bag_record_pid.teensy_wave_trigger_node:main',
+            'gq7_pps_time_sync = bag_record_pid.gq7_pps_time_sync_node:main',
         ],
     },
 )
