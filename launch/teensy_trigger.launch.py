@@ -136,7 +136,7 @@ def generate_launch_description():
         namespace="",
         package="rclcpp_components",
         executable="component_container_isolated",
-        composable_node_descriptions=make_recorder_nodes(keys=[f"trigger"]),
+        composable_node_descriptions=make_recorder_nodes(keys=[f"trigger"]) + make_recorder_nodes(keys=[f"tf"]),
         output="screen",
     )
 
