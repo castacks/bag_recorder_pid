@@ -18,37 +18,63 @@ def generate_launch_description():
     serial_port_arg = DeclareLaunchArgument(
         'serial_port',
         default_value='/dev/teensy_trigger',
-        description='Serial port for Teensy communication'
+        description='Serial port for Teensy communication (shared by trigger + PPS)'
     )
-    
+
     baud_rate_arg = DeclareLaunchArgument(
         'baud_rate',
         default_value='921600',
         description='Serial baud rate'
     )
-    
+
+    # Trigger GPIO (30 Hz wave, gpiochip1:8)
     gpio_chip_arg = DeclareLaunchArgument(
-        'gpio_chip',
+        'trigger_gpio_chip',
         default_value='/dev/gpiochip1',
-        description='GPIO chip device path'
+        description='GPIO chip for 30 Hz trigger edges'
     )
-    
+
     gpio_line_arg = DeclareLaunchArgument(
-        'gpio_line',
+        'trigger_gpio_line',
         default_value='8',
-        description='GPIO line offset for monitoring'
+        description='GPIO line for 30 Hz trigger edges'
     )
-    
+
     frame_id_arg = DeclareLaunchArgument(
-        'frame_id',
+        'trigger_frame_id',
         default_value='teensy_trigger',
-        description='Frame ID for timestamp messages'
+        description='Frame ID for trigger timestamp messages'
     )
-    
+
     debounce_time_arg = DeclareLaunchArgument(
         'debounce_time_us',
         default_value='50',
-        description='GPIO debounce time in microseconds'
+        description='Trigger GPIO debounce time in microseconds'
+    )
+
+    # PPS GPIO (1 Hz GPS PPS, gpiochip0:96)
+    pps_gpio_chip_arg = DeclareLaunchArgument(
+        'pps_gpio_chip',
+        default_value='/dev/gpiochip0',
+        description='GPIO chip for GPS PPS signal'
+    )
+
+    pps_gpio_line_arg = DeclareLaunchArgument(
+        'pps_gpio_line',
+        default_value='96',
+        description='GPIO line for GPS PPS signal'
+    )
+
+    pps_frame_id_arg = DeclareLaunchArgument(
+        'pps_frame_id',
+        default_value='gq7_pps',
+        description='Frame ID for /gq7/ext/time TimeReference messages'
+    )
+
+    pps_debounce_arg = DeclareLaunchArgument(
+        'pps_debounce_time_us',
+        default_value='0',
+        description='PPS GPIO debounce time in microseconds'
     )
     
     freq_window_arg = DeclareLaunchArgument(
@@ -107,26 +133,30 @@ def generate_launch_description():
     
     # Node
     teensy_node = Node(
-        package='bag_record_pid',  # Change to your package name
-        executable='teensy_wave_trigger',
-        name='teensy_wave_trigger',
+        package='bag_record_pid',
+        executable='teensy_combined',
+        name='teensy_combined',
         output='screen',
         parameters=[{
-            'serial_port': LaunchConfiguration('serial_port'),
-            'baud_rate': LaunchConfiguration('baud_rate'),
-            'gpio_chip': LaunchConfiguration('gpio_chip'),
-            'gpio_line': LaunchConfiguration('gpio_line'),
-            'frame_id': LaunchConfiguration('frame_id'),
-            'debounce_time_us': LaunchConfiguration('debounce_time_us'),
-            'freq_window_size': LaunchConfiguration('freq_window_size'),
-            'running_freq_window_size': LaunchConfiguration('running_freq_window_size'),
-            'debug_mode': LaunchConfiguration('debug_mode'),
-            'debug_duration_s': LaunchConfiguration('debug_duration_s'),
+            'serial_port':                  LaunchConfiguration('serial_port'),
+            'baud_rate':                    LaunchConfiguration('baud_rate'),
+            'trigger_gpio_chip':            LaunchConfiguration('trigger_gpio_chip'),
+            'trigger_gpio_line':            LaunchConfiguration('trigger_gpio_line'),
+            'trigger_frame_id':             LaunchConfiguration('trigger_frame_id'),
+            'debounce_time_us':             LaunchConfiguration('debounce_time_us'),
+            'pps_gpio_chip':                LaunchConfiguration('pps_gpio_chip'),
+            'pps_gpio_line':                LaunchConfiguration('pps_gpio_line'),
+            'pps_frame_id':                 LaunchConfiguration('pps_frame_id'),
+            'pps_debounce_time_us':         LaunchConfiguration('pps_debounce_time_us'),
+            'freq_window_size':             LaunchConfiguration('freq_window_size'),
+            'running_freq_window_size':     LaunchConfiguration('running_freq_window_size'),
+            'debug_mode':                   LaunchConfiguration('debug_mode'),
+            'debug_duration_s':             LaunchConfiguration('debug_duration_s'),
             'enable_continuous_diagnostics': LaunchConfiguration('enable_continuous_diagnostics'),
-            'diagnostic_period': LaunchConfiguration('diagnostic_period'),
-            'stop_capture_grace_ms': LaunchConfiguration('stop_capture_grace_ms'),
+            'diagnostic_period':            LaunchConfiguration('diagnostic_period'),
+            'stop_capture_grace_ms':        LaunchConfiguration('stop_capture_grace_ms'),
             'stop_empty_polls_before_exit': LaunchConfiguration('stop_empty_polls_before_exit'),
-            'start_drain_ms': LaunchConfiguration('start_drain_ms'),
+            'start_drain_ms':               LaunchConfiguration('start_drain_ms'),
         }]
     )
 
@@ -148,6 +178,10 @@ def generate_launch_description():
         gpio_line_arg,
         frame_id_arg,
         debounce_time_arg,
+        pps_gpio_chip_arg,
+        pps_gpio_line_arg,
+        pps_frame_id_arg,
+        pps_debounce_arg,
         freq_window_arg,
         running_freq_window_arg,
         debug_mode_arg,
