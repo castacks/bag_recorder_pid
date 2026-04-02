@@ -12,12 +12,12 @@ def generate_launch_description():
 
     gpio_chip_arg = DeclareLaunchArgument(
         'gpio_chip',
-        default_value='/dev/gpiochip1',
+        default_value='/dev/gpiochip0',
         description='GPIO chip device path (same pin as Teensy trigger)')
 
     gpio_line_arg = DeclareLaunchArgument(
         'gpio_line',
-        default_value='8',
+        default_value='96',
         description='GPIO line offset for PPS signal')
 
     debounce_arg = DeclareLaunchArgument(
