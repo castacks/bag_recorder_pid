@@ -169,7 +169,7 @@ class SyncPatternDetector:
 
 class TeensyCombinedNode(Node):
 
-    _LASTPPS_RE              = re.compile(r'LASTPPS edge=(\d+)\.(\d+)')
+    _LASTPPS_RE = re.compile(r"(\d+)\.(\d+)")
     _SERIAL_RECONNECT_COOLDOWN = 5.0  # seconds between reconnect attempts
 
     def __init__(self):
