@@ -907,6 +907,8 @@ class TeensyCombinedNode(Node):
         self.start_cmd_mono_ns = time.monotonic_ns()
         self.sync_detector.reset()
         self._detector_armed = True
+        # Wait for recording to be fully initialized before SYNC_START
+        time.sleep(0.5)
         teensy_resp = self._send_command('SYNC_START')
 
         if not teensy_resp or 'OK' not in teensy_resp:
