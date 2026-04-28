@@ -407,6 +407,8 @@ class TeensyCombinedNode(Node):
             self._time_sync_ok = msg.time_sync
         if msg.time_sync != prev:
             self.get_logger().info(f'GQ7 time_sync changed → {msg.time_sync}')
+            if prev and not msg.time_sync:
+                self.get_logger().error('GQ7 lost trigger — check trigger cables')
 
     # ─────────────────────────────────────────────────────────────────────────
     # PPS GPIO — always-on thread
