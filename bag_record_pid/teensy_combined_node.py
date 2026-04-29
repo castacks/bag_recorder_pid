@@ -300,10 +300,6 @@ class TeensyCombinedNode(Node):
             self.get_logger().error('PPS GPIO init failed — /gq7/ext/time will not publish')
             self._pps_thread = None
 
-        # ── Send START to Teensy ──────────────────────────────────────────────
-        self._send_command('START')
-        self.get_logger().info('✓ Teensy START sent on launch')
-
         self.get_logger().info(
             f'Ready | serial={self.serial_port} | '
             f'trigger GPIO={self.trigger_gpio_chip}:{self.trigger_gpio_line} | '
@@ -1016,9 +1012,8 @@ class TeensyCombinedNode(Node):
             except Exception:
                 pass
 
-        # Send STOP and close serial (once)
+        # Close serial
         if self.serial_conn and self.serial_conn.is_open:
-            self._send_command('STOP')
             with self._serial_lock:
                 self.serial_conn.close()
             self.serial_conn = None
