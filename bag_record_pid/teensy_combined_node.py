@@ -300,6 +300,18 @@ class TeensyCombinedNode(Node):
             self.get_logger().error('PPS GPIO init failed — /gq7/ext/time will not publish')
             self._pps_thread = None
 
+        # ── Trigger GPIO (always-on — publish timestamps from bootup) ─────────
+        self.gpio_ready_event.clear()
+        if self._init_trigger_gpio():
+            self.gpio_thread = threading.Thread(
+                target=self._gpio_monitor_thread, daemon=True)
+            self.gpio_thread.start()
+            if not self.gpio_ready_event.wait(timeout=0.5):
+                self.get_logger().warn('Trigger GPIO thread not ready at bootup')
+        else:
+            self.get_logger().error('Trigger GPIO init failed — timestamps will not publish')
+            self.gpio_thread = None
+
         self.get_logger().info(
             f'Ready | serial={self.serial_port} | '
             f'trigger GPIO={self.trigger_gpio_chip}:{self.trigger_gpio_line} | '
@@ -482,7 +494,8 @@ class TeensyCombinedNode(Node):
             msg.header.frame_id = self.pps_frame_id
             msg.time_ref        = ros_time.to_msg()
             msg.source          = 'gq7_pps'
-            self._time_pub.publish(msg)
+            if self._time_pub.get_subscription_count() > 0:
+                self._time_pub.publish(msg)
 
         self.get_logger().info('PPS GPIO thread exiting')
 
@@ -564,7 +577,8 @@ class TeensyCombinedNode(Node):
                         hdr          = Header()
                         hdr.stamp    = ros_time.to_msg()
                         hdr.frame_id = self.trigger_frame_id
-                        self.timestamp_pub.publish(hdr)
+                        if self.timestamp_pub.get_subscription_count() > 0:
+                            self.timestamp_pub.publish(hdr)
 
                         mono_ns = time.monotonic_ns()
                         if self.first_edge_mono_ns is None:
@@ -614,7 +628,8 @@ class TeensyCombinedNode(Node):
                                 if len(self._diag_intervals_ns) >= 1:
                                     iv_msg      = Int64()
                                     iv_msg.data = self._diag_intervals_ns[-1]
-                                    self.pulse_interval_pub.publish(iv_msg)
+                                    if self.pulse_interval_pub.get_subscription_count() > 0:
+                                        self.pulse_interval_pub.publish(iv_msg)
 
                         with self._diag_lock:
                             cnt      = self._diag_count
@@ -878,47 +893,24 @@ class TeensyCombinedNode(Node):
             response.message = 'Already running'
             return response
 
-        if not self._init_trigger_gpio():
+        if self.trigger_gpio_req is None:
             response.success = False
-            response.message = 'Trigger GPIO init failed'
+            response.message = 'Trigger GPIO not initialized'
             return response
 
         self._reset_run_state()
-        self.gpio_stop_event.clear()
-        self.gpio_ready_event.clear()
-
         self._drain_pending_trigger_events(self.start_drain_ms)
 
-        self.gpio_thread = threading.Thread(
-            target=self._gpio_monitor_thread, daemon=True)
-        self.gpio_thread.start()
-
-        if not self.gpio_ready_event.wait(timeout=0.5):
-            response.success = False
-            response.message = 'Trigger GPIO thread not ready'
-            self._stop_trigger_gpio_monitoring()
-            if self.trigger_gpio_req:
-                self.trigger_gpio_req.release()
-                self.trigger_gpio_req = None
-            return response
-
         self.start_cmd_mono_ns = time.monotonic_ns()
-        self.sync_detector.reset()
         self._detector_armed = True
         # Wait for recording to be fully initialized before SYNC_START
         time.sleep(0.5)
         teensy_resp = self._send_command('SYNC_START')
 
         if not teensy_resp or 'OK' not in teensy_resp:
+            self._detector_armed = False
             response.success = False
             response.message = f'SYNC_START failed: {teensy_resp}'
-            self.gpio_stop_event.set()
-            if self.gpio_thread:
-                self.gpio_thread.join(timeout=2.0)
-                self.gpio_thread = None
-            if self.trigger_gpio_req:
-                self.trigger_gpio_req.release()
-                self.trigger_gpio_req = None
             return response
 
         self.is_running = True
@@ -950,10 +942,6 @@ class TeensyCombinedNode(Node):
             self.diagnostic_timer = None
 
         teensy_sess_count = self._do_stop()
-        self._stop_trigger_gpio_monitoring(self.stop_capture_grace_ms)
-        if self.trigger_gpio_req:
-            self.trigger_gpio_req.release()
-            self.trigger_gpio_req = None
         self._log_edge_timing()
         self._publish_diagnostic(is_final=True, teensy_session_count=teensy_sess_count)
         self._reset_run_state()
@@ -970,10 +958,6 @@ class TeensyCombinedNode(Node):
             self.diagnostic_timer = None
 
         teensy_sess_count = self._do_stop()
-        self._stop_trigger_gpio_monitoring(self.stop_capture_grace_ms)
-        if self.trigger_gpio_req:
-            self.trigger_gpio_req.release()
-            self.trigger_gpio_req = None
         self._log_edge_timing()
         self._publish_diagnostic(is_final=True, teensy_session_count=teensy_sess_count)
         self._reset_run_state()
@@ -999,16 +983,19 @@ class TeensyCombinedNode(Node):
                 pass
             self._pps_gpio_req = None
 
-        # Stop trigger session if active
+        # Stop trigger GPIO thread
         if self.debug_timer:
             self.debug_timer.cancel()
         if self.diagnostic_timer:
             self.diagnostic_timer.cancel()
-        if self.is_running:
-            self._stop_trigger_gpio_monitoring(self.stop_capture_grace_ms)
-        if self.trigger_gpio_req:
+        trigger_req = self.trigger_gpio_req
+        self.trigger_gpio_req = None  # signals monitor thread to exit
+        if self.gpio_thread and self.gpio_thread.is_alive():
+            self.gpio_thread.join(timeout=2.0)
+            self.gpio_thread = None
+        if trigger_req:
             try:
-                self.trigger_gpio_req.release()
+                trigger_req.release()
             except Exception:
                 pass
 
