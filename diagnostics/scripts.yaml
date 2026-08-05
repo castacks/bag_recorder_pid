@@ -1,0 +1,9 @@
+velodyne: log_velodyne.sh
+multisense: log_multisense.sh
+actuation: log_actuation.sh
+thermal: log_thermal.sh
+tmux_laptop: log_tmux.sh
+tmux_desktop: log_tmux.sh
+usb_power: log_usb_power.sh
+connections: log_connections.sh
+deploy_config: log_deploy_config.sh

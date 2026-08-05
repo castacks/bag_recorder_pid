@@ -6,13 +6,69 @@ common:
     max-bag-duration: 120
   routines:
     pre_logger:
-      # - type: routines.example_routine.pre_logger
       - type: routines.metadata.update_metadata
         args:
             metadata_dir: /home/tartandriver/tartandriver_ws/src/core/bag_recorder_pid/metadata
             template: data_collect.yaml
+      # Diagnostic traffic capture. Comment out a row (and its matching
+      # post_logger row below) to skip that source for a given run.
+      - type: routines.diagnostics.start_log
+        args:
+          name: velodyne
+          host: desktop
+      - type: routines.diagnostics.start_log
+        args:
+          name: multisense
+      - type: routines.diagnostics.start_log
+        args:
+          name: actuation
+          host: desktop
+      - type: routines.diagnostics.start_log
+        args:
+          name: thermal
+          host: desktop
+      - type: routines.diagnostics.start_log
+        args:
+          name: tmux_laptop
+      - type: routines.diagnostics.start_log
+        args:
+          name: tmux_desktop
+          host: desktop
+          container: tartandriver
+      - type: routines.diagnostics.start_log
+        args:
+          name: usb_power
+      # One-shot snapshot -- exits immediately after writing, no matching
+      # post_logger entry needed.
+      - type: routines.diagnostics.start_log
+        args:
+          name: connections
+      - type: routines.diagnostics.start_log
+        args:
+          name: deploy_config
+
     post_logger:
-      # - type: routines.example_routine.post_logger
+      - type: routines.diagnostics.stop_log
+        args:
+          name: velodyne
+      - type: routines.diagnostics.stop_log
+        args:
+          name: multisense
+      - type: routines.diagnostics.stop_log
+        args:
+          name: actuation
+      - type: routines.diagnostics.stop_log
+        args:
+          name: thermal
+      - type: routines.diagnostics.stop_log
+        args:
+          name: tmux_laptop
+      - type: routines.diagnostics.stop_log
+        args:
+          name: tmux_desktop
+      - type: routines.diagnostics.stop_log
+        args:
+          name: usb_power
       - type: routines.freq.bag_freq
       - type: routines.metadata.store_metadata #placing as a post since i'm assuming the bag command is what creates the directory
         args:
