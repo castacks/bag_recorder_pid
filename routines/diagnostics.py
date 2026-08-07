@@ -12,9 +12,19 @@ import yaml
 
 _DIAG_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.realpath(__file__))), "diagnostics")
 
-# Single source of truth for name -> script, shared with remote_log.sh
-with open(os.path.join(_DIAG_DIR, "scripts.yaml")) as f:
-    SCRIPTS = yaml.safe_load(f)
+SCRIPTS = {
+    "velodyne": "log_velodyne.sh",
+    "multisense": "log_multisense.sh",
+    "actuation": "log_actuation.sh",
+    "thermal": "log_thermal.sh",
+    "tmux_laptop": "log_tmux.sh",
+    "tmux_desktop": "log_tmux.sh",
+    "usb_power_laptop": "log_usb_power.sh",
+    "usb_power_desktop": "log_usb_power.sh",
+    "connections_laptop": "log_connections.sh",
+    "connections_desktop": "log_connections.sh",
+    "deploy_config": "log_deploy_config.sh",
+}
 
 # Populated by start_log, consumed by stop_log. Safe as module-level state
 # since pre_logger, run_node, and post_logger all run in one process.
@@ -35,13 +45,13 @@ def start_log(output, name, host=None, container=None):
         cmd = [script, log_dir, host, name, script_name, container or ""]
     else:
         script = os.path.join(_DIAG_DIR, script_name)
-        cmd = [script, log_dir]
+        cmd = [script, log_dir, name]
     proc = subprocess.Popen(cmd, preexec_fn=os.setsid)
     _procs[name] = proc
     where = f" on {host}" if host else ""
     if container:
         where += f" (container {container})"
-    print(f"[diagnostics] started {name}{where} (pid {proc.pid}) -> {log_dir}")
+    print(f"[diagnostics] started logging {name}{where} (pid {proc.pid}) -> {log_dir}")
 
 def stop_log(name):
     proc = _procs.pop(name, None)
@@ -56,4 +66,4 @@ def stop_log(name):
         proc.wait()
     except ProcessLookupError:
         pass
-    print(f"[diagnostics] stopped {name}")
+    print(f"[diagnostics] stopped logging {name}")

@@ -4,8 +4,8 @@ set -euo pipefail
 LOG_PATH="${1:-tmp}"
 mkdir -p "${LOG_PATH}"
 
-VELODYNE1_IP="${VELODYNE1_IP:-10.41.8.130}"
-VELODYNE2_IP="${VELODYNE2_IP:-10.41.8.131}"
-INTERFACE="${INTERFACE:-eno8}"
+VELODYNE1_IP="${VELODYNE1_IP:-192.168.3.201}"
+VELODYNE2_IP="${VELODYNE2_IP:-192.168.3.202}"
+INTERFACE="${INTERFACE:-eno1}"
 
-exec sudo tcpdump src ${VELODYNE1_IP} or ${VELODYNE2_IP} -ni ${INTERFACE} -w "${LOG_PATH}/velodyne.pcap"
+exec tcpdump "src ${VELODYNE1_IP} or src ${VELODYNE2_IP}" -ni ${INTERFACE} -w "${LOG_PATH}/velodyne.pcap"

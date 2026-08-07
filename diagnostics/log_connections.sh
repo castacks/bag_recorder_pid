@@ -1,14 +1,14 @@
 #!/usr/bin/env bash
 set -uo pipefail
 
-# One-shot snapshot of what's plugged in where at the moment this runs.
-# Unlike the other log_*.sh scripts this doesn't tail/block -- it writes one
-# file and exits, so there's no matching stop_log needed for it.
-
+# Single snapshot of what's plugged into ports
 LOG_PATH="${1:-tmp}"
 mkdir -p "${LOG_PATH}"
 
-OUT="${LOG_PATH}/connections.log"
+PREFIX="${2:-}" # laptop vs desktop so not overwrite
+FILE_PREFIX="${PREFIX:+${PREFIX}_}"
+
+OUT="${LOG_PATH}/${FILE_PREFIX}connections.log"
 
 {
     echo "=== snapshot taken: $(date -Is) ==="
@@ -26,7 +26,7 @@ OUT="${LOG_PATH}/connections.log"
     for dev in /dev/ttyUSB* /dev/ttyACM* /dev/ttyS*; do
         [ -e "$dev" ] || continue
         info=$(udevadm info -q property -n "$dev" 2>/dev/null | grep -E "ID_VENDOR|ID_MODEL|ID_SERIAL")
-        # Bare platform ttyS* ports have no vendor/model/serial -- nothing
+        # Bare platform ttyS* ports have no vendor/model/serial so nothing
         # real is attached, just motherboard UART headers. Skip them.
         [ -z "${info}" ] && continue
         echo "-- ${dev} --"

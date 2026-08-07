@@ -214,13 +214,25 @@ def parse_config(config: dict, args: argparse.Namespace, rargs: argparse.Namespa
     if not args.no_prepend:
         cli_args['output'] = next_foldername(cli_args['output'], prefix=True, digits=2)
 
+    # new dir format:
+    # run_dir
+    # - rosbags (d)
+    # - diagnostics (d)
+    # - info.yaml (f)
+    bag_cli_args = cli_args
+    if 'output' in cli_args:
+        bag_cli_args = cli_args | {'output': os.path.join(cli_args['output'], 'rosbags')}
+
     # Precedence order: cli > local cfg args > common cfg args (> means more precedence)
     for _, routines in common_config['routines'].items():
         for hook in routines:
-            hook['args'] = common_config['args'] | hook.get('args', {}) | cli_args
+            # bag_freq reads metadata.yaml out of the actual rosbag2 dir, so
+            # it needs the same output path as the bag command itself.
+            hook_cli_args = bag_cli_args if hook.get('type') == 'routines.freq.bag_freq' else cli_args
+            hook['args'] = common_config['args'] | hook.get('args', {}) | hook_cli_args
 
     for _, bag_cfg in config['bags'].items():
-        bag_cfg['args'] = common_config['args'] | bag_cfg.get('args', {}) | cli_args
+        bag_cfg['args'] = common_config['args'] | bag_cfg.get('args', {}) | bag_cli_args
 
     return config
 
