@@ -10,6 +10,10 @@ set -uo pipefail
 LOG_PATH="${1:-tmp}"
 mkdir -p "${LOG_PATH}"
 
+# Routine name from the config leads; the trailing word says which of the two
+# configs it is: deploy_config_tmuxp.yaml, deploy_config_deploy.yaml
+PREFIX="${2:-deploy_config}"
+
 # Where deploy.py writes each run's data (the "data_folder" field in
 # whichever deploy config was used). Override if yours differs.
 DEPLOY_DATA_ROOT="${DEPLOY_DATA_ROOT:-/home/tartandriver/workspace/debug}"
@@ -21,16 +25,16 @@ if [ -z "${latest}" ]; then
     exit 0
 fi
 
-cp "${latest}" "${LOG_PATH}/tmuxp_config.yaml"
-echo "[deploy_config] copied ${latest} -> ${LOG_PATH}/tmuxp_config.yaml"
+cp "${latest}" "${LOG_PATH}/${PREFIX}_tmuxp.yaml"
+echo "[deploy_config] copied ${latest} -> ${LOG_PATH}/${PREFIX}_tmuxp.yaml"
 
 # deploy.py writes deploy_config.yaml (the raw deploy config with its
 # !include-d sub-configs expanded) alongside tmuxp_config.yaml in the same
 # run directory.
 deploy_cfg="$(dirname "${latest}")/deploy_config.yaml"
 if [ -f "${deploy_cfg}" ]; then
-    cp "${deploy_cfg}" "${LOG_PATH}/deploy_config.yaml"
-    echo "[deploy_config] copied ${deploy_cfg} -> ${LOG_PATH}/deploy_config.yaml"
+    cp "${deploy_cfg}" "${LOG_PATH}/${PREFIX}_deploy.yaml"
+    echo "[deploy_config] copied ${deploy_cfg} -> ${LOG_PATH}/${PREFIX}_deploy.yaml"
 else
     echo "[deploy_config] no deploy_config.yaml found next to ${latest}" >&2
 fi

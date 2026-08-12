@@ -9,8 +9,9 @@ mkdir -p "${LOG_PATH}"
 # silently fail if that relative path doesn't exist there).
 LOG_PATH="$(cd "${LOG_PATH}" && pwd)"
 
-PREFIX="${2:-}" # laptop vs desktop so not overwrite
-FILE_PREFIX="${PREFIX:+${PREFIX}_}"
+# Routine name from the config (tmux_laptop vs tmux_desktop) leads, then the
+# pane's launch key: tmux_laptop_velodyne_driver.log
+PREFIX="${2:-tmux}"
 
 # fine panes tagged by tartandriver_deploy launch key
 list_panes() {
@@ -37,7 +38,7 @@ attach_panes() {
         if [ "${title}" = "${HOSTNAME}" ]; then
             continue
         fi
-        logfile="${LOG_PATH}/${FILE_PREFIX}${title}.log"
+        logfile="${LOG_PATH}/${PREFIX}_${title}.log"
         # Some output printout formatting
         # -S -1000: last 1000 lines, -$(): strip trailing blank lines; -J: join
         # lines tmux soft-wrapped.

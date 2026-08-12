@@ -7,7 +7,7 @@ BAGGER="${SCRIPT_DIR}/bagger.py"
 CONFIG_DIR="${SCRIPT_DIR}/../config"
 
 DURATION="${1:-5}"
-OUTPUT_DIR="${2:-${HOME}/rosbags/$(date +%Y%m%d)/test_diagnostics$(date +%%H%M%S)}"
+OUTPUT_DIR="${2:-${HOME}/rosbags/$(date +%Y%m%d)/test_diagnostics/sweep_$(date +%H%M%S)}"
 
 mkdir -p "${OUTPUT_DIR}"
 cd "${OUTPUT_DIR}"

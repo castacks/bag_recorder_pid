@@ -4,6 +4,10 @@ set -euo pipefail
 LOG_PATH="${1:-tmp}"
 mkdir -p "${LOG_PATH}"
 
+# Routine name from the config leads; the trailing words say which camera and
+# which stream: thermal_left_ffc.raw, thermal_right_video.raw, ...
+PREFIX="${2:-thermal}"
+
 # FLIR Boson FFC-trigger serial lines, exposed as USB CDC-ACM devices via the
 # udev symlinks flir_ros_sync uses (see src/drivers/flir_thermal_driver/src/flir_ros_sync/config/*.yaml).
 THERMAL_DEV_LEFT="${THERMAL_DEV_LEFT:-/dev/flir_boson_serial_322011}"
@@ -18,10 +22,10 @@ THERMAL_VIDEO_LEFT="${THERMAL_VIDEO_LEFT:-/dev/flir_boson_video_322011}"
 THERMAL_VIDEO_RIGHT="${THERMAL_VIDEO_RIGHT:-/dev/flir_boson_video_322008}"
 THERMAL_VIDEO_FMT="${THERMAL_VIDEO_FMT:-}"
 
-sudo socat -u ${THERMAL_DEV_LEFT},raw,echo=0 - > "${LOG_PATH}/thermal_left.raw" &
-sudo socat -u ${THERMAL_DEV_RIGHT},raw,echo=0 - > "${LOG_PATH}/thermal_right.raw" &
+sudo socat -u ${THERMAL_DEV_LEFT},raw,echo=0 - > "${LOG_PATH}/${PREFIX}_left_ffc.raw" &
+sudo socat -u ${THERMAL_DEV_RIGHT},raw,echo=0 - > "${LOG_PATH}/${PREFIX}_right_ffc.raw" &
 
-v4l2-ctl --device="${THERMAL_VIDEO_LEFT}" ${THERMAL_VIDEO_FMT:+--set-fmt-video=${THERMAL_VIDEO_FMT}} --stream-mmap --stream-to="${LOG_PATH}/thermal_left_video.raw" &
-v4l2-ctl --device="${THERMAL_VIDEO_RIGHT}" ${THERMAL_VIDEO_FMT:+--set-fmt-video=${THERMAL_VIDEO_FMT}} --stream-mmap --stream-to="${LOG_PATH}/thermal_right_video.raw" &
+v4l2-ctl --device="${THERMAL_VIDEO_LEFT}" ${THERMAL_VIDEO_FMT:+--set-fmt-video=${THERMAL_VIDEO_FMT}} --stream-mmap --stream-to="${LOG_PATH}/${PREFIX}_left_video.raw" &
+v4l2-ctl --device="${THERMAL_VIDEO_RIGHT}" ${THERMAL_VIDEO_FMT:+--set-fmt-video=${THERMAL_VIDEO_FMT}} --stream-mmap --stream-to="${LOG_PATH}/${PREFIX}_right_video.raw" &
 
 wait
