@@ -6,10 +6,9 @@ conditions:
 context:
 - collect
 course:
-- meadows
-- turnpike
+- wfig8
 driver: Matthew
-number_people: 2
+number_people: 3
 robot: yamaha_viking
 max_throttle: .75
 drive: awd

@@ -6,13 +6,88 @@ common:
     max-bag-duration: 120
   routines:
     pre_logger:
-      # - type: routines.example_routine.pre_logger
       - type: routines.metadata.update_metadata
         args:
             metadata_dir: /home/tartandriver/tartandriver_ws/src/core/bag_recorder_pid/metadata
             template: data_collect.yaml
+      # Diagnostic traffic capture. Comment out a row (and its matching
+      # post_logger row below) to skip that source for a given run.
+      # - type: routines.diagnostics.start_log
+      #   args:
+      #     name: velodyne
+      #     host: atv@192.168.3.30
+      # - type: routines.diagnostics.start_log
+      #   args:
+      #     name: multisense
+      # - type: routines.diagnostics.start_log
+      #   args:
+      #     name: actuation
+      #     host: atv@192.168.3.30
+      # - type: routines.diagnostics.start_log
+      #   args:
+      #     name: thermal
+      #     host: atv@192.168.3.30
+      - type: routines.diagnostics.start_log
+        args:
+          name: tmux_laptop
+      - type: routines.diagnostics.start_log
+        args:
+          name: tmux_desktop
+          host: atv@192.168.3.30
+          container: tartandriver
+      - type: routines.diagnostics.start_log
+        args:
+          name: usb_power_laptop
+      - type: routines.diagnostics.start_log
+        args:
+          name: usb_power_desktop
+          host: atv@192.168.3.30
+          container: tartandriver
+      # One-shot snapshot -- exits immediately after writing locally, no
+      # matching post_logger entry needed for the laptop variant. The
+      # desktop variant goes through remote_log.sh though, which always
+      # needs an explicit stop to sync results back and clean up, so it
+      # does need a matching post_logger entry despite being one-shot.
+      - type: routines.diagnostics.start_log
+        args:
+          name: connections_laptop
+      - type: routines.diagnostics.start_log
+        args:
+          name: connections_desktop
+          host: atv@192.168.3.30
+          container: tartandriver
+      - type: routines.diagnostics.start_log
+        args:
+          name: deploy_config
+
     post_logger:
-      # - type: routines.example_routine.post_logger
+      # - type: routines.diagnostics.stop_log
+      #   args:
+      #     name: velodyne
+      # - type: routines.diagnostics.stop_log
+      #   args:
+      #     name: multisense
+      # - type: routines.diagnostics.stop_log
+      #   args:
+      #     name: actuation
+      # - type: routines.diagnostics.stop_log
+      #   args:
+      #     name: thermal
+      - type: routines.diagnostics.stop_log
+        args:
+          name: tmux_laptop
+      - type: routines.diagnostics.stop_log
+        args:
+          name: tmux_desktop
+      - type: routines.diagnostics.stop_log
+        args:
+          name: usb_power_laptop
+      - type: routines.diagnostics.stop_log
+        args:
+          name: usb_power_desktop
+      - type: routines.diagnostics.stop_log
+        args:
+          name: connections_desktop
       - type: routines.freq.bag_freq
       - type: routines.metadata.store_metadata #placing as a post since i'm assuming the bag command is what creates the directory
         args:
