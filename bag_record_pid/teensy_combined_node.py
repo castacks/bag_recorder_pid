@@ -45,7 +45,7 @@ import rclpy
 import serial
 from gpiod.line import Clock, Direction, Edge
 from rclpy.callback_groups import ReentrantCallbackGroup
-from rclpy.executors import MultiThreadedExecutor
+from rclpy.executors import ExternalShutdownException, MultiThreadedExecutor
 from rclpy.node import Node
 from rclpy.time import Time
 
@@ -150,6 +150,7 @@ class TeensyCombinedNode(Node):
         self._skipping            = False
         self._skip_count          = 0
         self._sent_since_gap      = False  # a /gq7/ext/time went out since the last PPS gap / time_sync change
+        self._ever_sent           = False  # the GQ7 has been given the time at least once since node start
         self._pps_edge_count      = 0
         # GQ7
         self._time_sync_ok    = False
@@ -163,6 +164,7 @@ class TeensyCombinedNode(Node):
         self._time_valid_deadline = None   # W9 follow-up
         # Monitoring
         self._pps_stopped     = False
+        self._edges_since     = None       # monotonic time PPS edges started arriving (W13 grace)
         self._lock_zero_since = None
         self._lock_warned     = False
         self._waiting_sync    = False      # suppress W11 while wait_sync_ready runs
@@ -418,6 +420,8 @@ class TeensyCombinedNode(Node):
             self._last_edge_ns = orin_edge_ns
             was_stopped = self._pps_stopped
             self._pps_stopped = False
+        if was_stopped or prev_edge is None:
+            self._edges_since = time.monotonic()
         if was_stopped:
             gap = (orin_edge_ns - prev_edge) / NS if prev_edge else float('nan')
             self.get_logger().warn(f'W7 PPS resumed after {gap:.1f} s')
@@ -438,6 +442,7 @@ class TeensyCombinedNode(Node):
                 first_after_gap = not self._sent_since_gap
                 skipped = self._skip_count
                 self._sent_since_gap = True
+                self._ever_sent = True
                 self._last_published_sec = sec
                 self._last_publish_ns = orin_edge_ns
                 self._ext_time_published = True
@@ -531,9 +536,12 @@ class TeensyCombinedNode(Node):
                 self.get_logger().warn('W10 Teensy LOCK=1 again')
             self._lock_zero_since, self._lock_warned = None, False
 
-        # W11 / W12: GQ7 clock vs Orin
+        # W11 / W12: GQ7 clock vs Orin. Only once the GQ7 has been given the time: right after a GQ7
+        # power-up its clock is unset until the first /gq7/ext/time, which is normal startup, not an error.
         med, clk_ok = self._gq7_clock_check()
-        if not math.isnan(med):
+        with self._state_lock:
+            ever_sent = self._ever_sent
+        if not math.isnan(med) and ever_sent:
             if not clk_ok and not waiting:
                 if self._gq7_clock_bad_since is None:
                     self._gq7_clock_bad_since = time.monotonic()
@@ -550,8 +558,11 @@ class TeensyCombinedNode(Node):
         with self._state_lock:
             self._gq7_clock_ok = clk_ok
 
-        # W13 / W14: GQ7 not seeing PPS while the Orin is
-        if edge_recent and last_pps_rcvd > 1 and self._gq7_seen_pps_ok:
+        # W13 / W14: GQ7 not seeing PPS while the Orin is. Grace of 3 s after PPS (re)starts: the GQ7's
+        # last_pps_rcvd lags by a status message.
+        edges_steady = (edge_recent and self._edges_since is not None
+                        and time.monotonic() - self._edges_since > 3.0)
+        if edges_steady and last_pps_rcvd > 1 and self._gq7_seen_pps_ok:
             self.get_logger().warn(f'W13 GQ7 not seeing PPS: last_pps_rcvd={last_pps_rcvd} s while the Orin '
                                    'receives edges (Teensy → GQ7 wire or GPIO1 config)')
             self._gq7_seen_pps_ok = False
@@ -885,12 +896,13 @@ def main(args=None):
     executor.add_node(node)
     try:
         executor.spin()
-    except KeyboardInterrupt:
+    except (KeyboardInterrupt, ExternalShutdownException):
         pass
     finally:
         node.cleanup()
         node.destroy_node()
-        rclpy.shutdown()
+        if rclpy.ok():   # on SIGINT rclpy's handler has already shut the context down
+            rclpy.shutdown()
 
 
 if __name__ == '__main__':
