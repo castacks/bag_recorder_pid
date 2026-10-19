@@ -48,8 +48,9 @@ def generate_launch_description():
 
     debounce_time_arg = DeclareLaunchArgument(
         'debounce_time_us',
-        default_value='50',
-        description='Trigger GPIO debounce time in microseconds'
+        default_value='0',
+        description='Trigger GPIO debounce time in microseconds. Keep 0: the Tegra hardware debounce works in '
+                    '1 ms steps and quantizes every trigger stamp to 1 ms'
     )
 
     # PPS GPIO (1 Hz GPS PPS, gpiochip0:96)
