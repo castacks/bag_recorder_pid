@@ -48,8 +48,21 @@ def generate_launch_description():
 
     debounce_time_arg = DeclareLaunchArgument(
         'debounce_time_us',
-        default_value='50',
-        description='Trigger GPIO debounce time in microseconds'
+        default_value='0',
+        description='Trigger GPIO debounce time in microseconds. Keep 0: the Tegra hardware debounce works in '
+                    '1 ms steps and quantizes every trigger stamp to 1 ms'
+    )
+    # debounce 0 verified (2026-10-19/20): the Teensy drives the line directly, and the node requests both edges
+    # and keeps the rising ones (rising-only detection reports falling edges as rising). Over a 1 h and a 12 min
+    # recording (108,082 + 21,682 stamps) and a 5 min HTE test: 0 doubled edges (no interval < 30 ms), no missed
+    # triggers (the only gaps > 40 ms are the 10 inside the start/end sync codes), no backwards stamps, and
+    # tartanstar's extraction found both sync codes and matched the ZED and thermal frames to them.
+
+    trigger_clock_arg = DeclareLaunchArgument(
+        'trigger_event_clock',
+        default_value='hte',
+        description="Trigger edge stamps: 'hte' (hardware timestamp, converted to REALTIME per edge, ~1 us "
+                    "jitter) or 'realtime' (stamped in the interrupt handler, ~40-100 us jitter)"
     )
 
     # PPS GPIO (1 Hz GPS PPS, gpiochip0:96)
@@ -144,6 +157,7 @@ def generate_launch_description():
             'trigger_gpio_line':            LaunchConfiguration('trigger_gpio_line'),
             'trigger_frame_id':             LaunchConfiguration('trigger_frame_id'),
             'debounce_time_us':             LaunchConfiguration('debounce_time_us'),
+            'trigger_event_clock':          LaunchConfiguration('trigger_event_clock'),
             'pps_gpio_chip':                LaunchConfiguration('pps_gpio_chip'),
             'pps_gpio_line':                LaunchConfiguration('pps_gpio_line'),
             'pps_frame_id':                 LaunchConfiguration('pps_frame_id'),
@@ -178,6 +192,7 @@ def generate_launch_description():
         gpio_line_arg,
         frame_id_arg,
         debounce_time_arg,
+        trigger_clock_arg,
         pps_gpio_chip_arg,
         pps_gpio_line_arg,
         pps_frame_id_arg,
