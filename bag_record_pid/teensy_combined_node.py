@@ -97,7 +97,8 @@ class TeensyCombinedNode(Node):
         self.declare_parameter('gq7_clock_error_s',       5.0)    # W11 becomes ERROR after this long
         self.declare_parameter('time_valid_timeout_s',    3.0)    # W9a: time_valid expected within this
         self.declare_parameter('lock_warn_s',             10.0)   # W6: LOCK=0 for this long
-        self.declare_parameter('wait_sync_timeout_s',     30.0)
+        self.declare_parameter('wait_sync_timeout_s',     45.0)
+        self.declare_parameter('wait_sync_settle_s',      10.0)   # PPS must run this long without a gap
 
         p = self.get_parameter
         self.serial_port          = p('serial_port').value
@@ -120,6 +121,7 @@ class TeensyCombinedNode(Node):
         self.time_valid_timeout_s = p('time_valid_timeout_s').value
         self.lock_warn_s          = p('lock_warn_s').value
         self.wait_sync_timeout_s  = p('wait_sync_timeout_s').value
+        self.wait_sync_settle_s   = p('wait_sync_settle_s').value
 
         # ── Serial ────────────────────────────────────────────────────────────
         self._serial_lock = threading.Lock()
@@ -771,10 +773,20 @@ class TeensyCombinedNode(Node):
                 return response
             self.get_logger().info('wait_sync_ready: PTPRESET sent, waiting for Teensy relock and GQ7 sync')
             time.sleep(2.0)   # let PPS go off and the edge/LASTPPS state reflect the reset
-            problems = self._sync_problems()
+            # Besides the sync conditions, PPS must have run without a gap for wait_sync_settle_s: right after
+            # the relock the Teensy servo can still overshoot past the 10 us PPS gate (seen 2026-10-19: PPS
+            # stopped again 2.6 s after a too-early "in sync").
+            def problems_now():
+                pr = self._sync_problems()
+                since = self._edges_since
+                steady = 0.0 if since is None else time.monotonic() - since
+                if steady < self.wait_sync_settle_s:
+                    pr.append(f'PPS steady for {steady:.0f} s (< {self.wait_sync_settle_s:.0f} s)')
+                return pr
+            problems = problems_now()
             while problems and time.monotonic() - t0 < self.wait_sync_timeout_s:
                 time.sleep(0.5)
-                problems = self._sync_problems()
+                problems = problems_now()
             dt = time.monotonic() - t0
             if problems:
                 response.success = False
