@@ -33,7 +33,6 @@ import datetime
 import math
 import os
 import re
-import statistics
 import sys
 import threading
 import time
@@ -356,13 +355,15 @@ class TeensyCombinedNode(Node):
             self.get_logger().warn('GQ7 time_valid True → False')
 
     def _gq7_clock_check(self):
-        """GQ7 clock vs Orin (change 11): median receive - header over the last 5 time_sync_status."""
+        """GQ7 clock vs Orin (change 11): minimum of receive - header over the last 5 time_sync_status.
+        Minimum, not median: delivery delays (driver or transport stalls, seen as bursts of status messages
+        arriving 1-4 s late) only ever add to receive - header, while a wrong GQ7 clock shifts every sample."""
         with self._state_lock:
             vals = list(self._gq7_d_ms)
         if not vals:
             return float('nan'), False
-        med = statistics.median(vals)
-        return med, self.gq7_clock_min_ms <= med <= self.gq7_clock_max_ms
+        d = min(vals)
+        return d, self.gq7_clock_min_ms <= d <= self.gq7_clock_max_ms
 
     # ─────────────────────────────────────────────────────────────────────────
     # PPS GPIO (always-on)
@@ -545,15 +546,15 @@ class TeensyCombinedNode(Node):
             if not clk_ok and not waiting:
                 if self._gq7_clock_bad_since is None:
                     self._gq7_clock_bad_since = time.monotonic()
-                    self.get_logger().warn(f'W11 GQ7 clock off: receive - header median {med:.1f} ms '
+                    self.get_logger().warn(f'W11 GQ7 clock off: receive - header min {med:.1f} ms '
                                            f'(band {self.gq7_clock_min_ms:.0f}–{self.gq7_clock_max_ms:.0f} ms)')
                 elif (not self._gq7_clock_error_logged and
                       time.monotonic() - self._gq7_clock_bad_since >= self.gq7_clock_error_s):
                     self.get_logger().error(f'W11 GQ7 clock off for {self.gq7_clock_error_s:.0f} s: '
-                                            f'median {med:.1f} ms — GQ7 stamps in the bag are wrong')
+                                            f'min {med:.1f} ms — GQ7 stamps in the bag are wrong')
                     self._gq7_clock_error_logged = True
             elif clk_ok and self._gq7_clock_bad_since is not None:
-                self.get_logger().warn(f'W12 GQ7 clock back: median {med:.1f} ms')
+                self.get_logger().warn(f'W12 GQ7 clock back: min {med:.1f} ms')
                 self._gq7_clock_bad_since, self._gq7_clock_error_logged = None, False
         with self._state_lock:
             self._gq7_clock_ok = clk_ok
@@ -630,7 +631,7 @@ class TeensyCombinedNode(Node):
         if not s['tv']:
             problems.append('GQ7 time_valid False')
         if not clk_ok:
-            problems.append(f'GQ7 clock check failed (median {_med:.1f} ms)')
+            problems.append(f'GQ7 clock check failed (min receive - header {_med:.1f} ms)')
         return problems
 
     # ─────────────────────────────────────────────────────────────────────────
