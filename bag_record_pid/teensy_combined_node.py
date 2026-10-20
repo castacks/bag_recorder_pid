@@ -17,7 +17,7 @@ Services:
   /teensy/ptp_reset        — send PTPRESET (refused during a session)
 
 Topics published:
-  /teensy/timestamps  (std_msgs/Header)               — every rising trigger edge (CLOCK_REALTIME)
+  /teensy/timestamps  (std_msgs/Header)               — every rising trigger edge (CLOCK_REALTIME, from HTE)
   /gq7/ext/time       (sensor_msgs/TimeReference)     — PTP second of each PPS edge that passes C1–C6;
                                                          header.stamp = Orin time of the edge
   /teensy/ptp_status  (tartanstar_msgs/TeensyPtpStatus) — 1 Hz Teensy PTP / GQ7 sync diagnostics
@@ -25,8 +25,96 @@ Topics published:
 Topics subscribed:
   /gq7/mip/system/time_sync_status — GQ7 time_sync, last_pps_rcvd, time_valid, GQ7 clock check
 
-Timing design: see tartan_rgbt_ws GQ7_TIMESTAMP_DRIFT_v2.md ("Next round: ROS node changes").
 Requires the Teensy firmware that reports LOCK/AGE/OFFSET/PPS in LASTPPS (tartan_rgbt_ws 6000d07).
+
+═══════════════════════════════════════════════════════════════════════════════════════════════════════
+Timing design
+═══════════════════════════════════════════════════════════════════════════════════════════════════════
+
+Clock chain. Every sensor stamp is meant to be on the Orin's CLOCK_REALTIME:
+  chrony (NTP) → CLOCK_REALTIME → phc2sys → X550 NIC clocks (enP5p1s0f1 Ouster, enP5p1s0f0 Teensy)
+  → ptp4l (master) → Teensy 4.1 PTP slave (t41-ptp) → PPS on Teensy pin 24 at every whole PTP second
+  → GQ7 GPIO1 and the Orin PPS GPIO (pps_gpio_chip/line).
+  The GQ7 stamps its data with its own device time (timestamp_source 1). It takes the timing within the
+  second from the PPS edge and the whole second from /gq7/ext/time, which this node publishes; the GQ7
+  driver forwards time_ref to the GQ7 (only the whole second is used, and only within 250 ms of the edge).
+
+Failure this design guards against. The Teensy's PTP servo stops correcting when its master changes rate by
+  > 100 ppm and then free-runs. The old firmware kept sending PPS from that wrong clock, so the GQ7 followed
+  it (recorded drift 0.2–0.4 ms/s, up to 1.4 s) while every GQ7 status flag (time_sync, last_pps_rcvd,
+  time_valid) stayed healthy. The flags only say the GQ7 sees PPS and was given a time, not that the time is
+  right. So the node compares clocks against the Orin directly instead of trusting flags:
+  - the Teensy's second vs the Orin's own time of the PPS edge (C2), on every edge;
+  - the GQ7's clock vs the Orin (GQ7 clock check), every second.
+
+Teensy. The firmware outputs PPS only while it trusts its PTP time (fresh lock since boot / link-up /
+  PTPRESET, an update in the last 3 s, |offset| < 10 µs, relock after a dropout). LASTPPS returns
+  "<sec>.000000000 LOCK= AGE= OFFSET= PPS=": the PTP second of the last edge it sent plus its servo state.
+  LOCK flickers in normal operation and is used for monitoring only.
+
+PPS edge → /gq7/ext/time (_pps_monitor_thread, _check_edge). The PPS line is stamped with CLOCK_REALTIME by
+  the kernel (orin_edge_ns). On each edge the node queries LASTPPS and publishes the second only if all pass:
+  C1  the reply says PPS=1 (cross-check; read just after the edge);
+  C2  |orin_edge_ns − sec·1e9| < ext_time_max_offset_ms (1 ms). Normally ~17 µs (GPIO latency). Catches a
+      reply from the wrong second (±1 s), a Teensy locked to a wrong master, and slow drift the firmware
+      misses;
+  C3  publish within ext_time_max_latency_ms (150 ms) of the edge (the GQ7 needs it within 250 ms);
+  C4  sec = previous published sec + 1 (unless after a gap): no repeated or skipped second;
+  C5  a valid LASTPPS reply;
+  C6  GQ7 time_sync True (the GQ7 reaches it from PPS alone, so this isn't circular).
+  It is published on every edge that passes, not only when LOCK=1: the label is the whole second, the edge
+  carries the timing, and resending every second corrects a GQ7 seconds miscount after any PPS gap or
+  glitch, as the GQ7 manual asks. header.stamp = orin_edge_ns, time_ref = sec, so every bag records the
+  Orin − Teensy offset at 1 Hz (header.stamp − time_ref).
+
+GQ7 clock check (_gq7_clock_check). time_sync_status (1 Hz) is stamped with GQ7 device time, so
+  d = receive time − header.stamp = GQ7 clock vs Orin + transport latency. Healthy: ~2.5–3.9 ms. Uses the
+  minimum of the last 5 messages (a burst of late-delivered messages must not look like a clock error).
+  Fails outside gq7_clock_min_ms..gq7_clock_max_ms (0–20 ms). This is the end-to-end check: the GQ7's
+  output stamps agree with the Orin, whatever went wrong upstream. Checked only once the GQ7 has been
+  given the time (right after a GQ7 power-up its clock is unset; that is normal startup).
+
+Sync events (logged on transitions only; recorded in the bag through /rosout). WARN, also during a
+  recording (after the GQ7 has the time, a PPS outage only lets it free-run on its own oscillator):
+  W1 PPS stopped (with LOCK/AGE/OFFSET/PPS, which show the cause)   W7 PPS resumed
+  W2 GQ7 time_sync True → False                                      W8 GQ7 time_sync False → True
+  W3 /gq7/ext/time skipped (which of C1–C6 failed)                   W9 time sent after a gap
+  W9a GQ7 did not accept the time (time_valid not True within 3 s after W9)
+  W5 missed PPS edge (node fell behind)
+  W6 LOCK=0 for > 10 s (servo problem; PPS may still be fine)        W10 LOCK=1 again
+  W11 GQ7 clock off                                                  W12 GQ7 clock back
+  W13 GQ7 not seeing PPS while the Orin is (wiring; 3 s grace)       W14 GQ7 sees PPS again
+  ERROR only when not recoverable or the data would be wrong: W11 lasting ≥ gq7_clock_error_s (5 s; the
+  GQ7 stamps in the bag are wrong), W4 no / garbled LASTPPS reply, Teensy firmware too old, PPS GPIO
+  without CLOCK_REALTIME, wait_sync_ready failing, start_trigger refused.
+  The node never sends PTPRESET or changes anything on its own during a recording: it skips and warns.
+
+Recording flow (with the ros_rec app). sensor_reset (restarts ptp4l + phc2sys, so the Teensy relocks)
+  → /teensy/wait_sync_ready → recorders start → /teensy/start_trigger.
+  wait_sync_ready: PTPRESET first (a master restart doesn't clear a frozen servo), then waits up to
+    wait_sync_timeout_s (45 s) until _sync_problems() is empty (LASTPPS answers with PPS=1, a PPS edge in
+    the last 2 s, C2 passes, GQ7 time_sync, the time sent since the last gap, last_pps_rcvd ≤ 1,
+    time_valid, GQ7 clock check) AND PPS has run without a gap for wait_sync_settle_s (10 s; the servo can
+    overshoot right after relocking). On failure the app blocks the recording.
+  start_trigger: the same checks as a safety net (the recorders are already running); refused on failure,
+    and the app then stops the recording.
+  wait_sync_ready and ptp_reset are refused during a session (PTPRESET steps the Teensy clock).
+
+Trigger stamps (_init_trigger_gpio, _gpio_monitor_thread). The Teensy drives the 30 Hz trigger from its own
+  crystal (not PTP); the Orin stamps each rising edge.
+  - Edge.BOTH, rising events kept: with Edge.RISING alone the Tegra GPIO driver reports many falling edges as
+    rising (~48/s instead of 30). With HTE it also reports some spurious falling events; they are dropped.
+  - Debounce 0: the Tegra hardware debounce works in whole milliseconds and would put every stamp on a 1 ms
+    grid. The Teensy drives the line directly, so there is nothing to debounce (verified: no doubled or
+    missed edges).
+  - trigger_event_clock 'hte' (default): the Tegra hardware timestamp engine stamps the edge at the pin, in
+    ns of the ARM system counter. It is converted to CLOCK_REALTIME per batch of edges (_HteClock):
+    counter − MONOTONIC_RAW is a constant, measured from the counter itself; REALTIME − MONOTONIC_RAW is
+    read fresh each time, because chrony keeps a rate correction on REALTIME even when offline (~19 ppm
+    measured). A one-time HTE → REALTIME offset drifted by up to 36 ms per session in the old node.
+    Jitter ~0.2 µs std. 'realtime': the kernel stamps the edge in the interrupt handler, ~40–100 µs std
+    (interrupt latency). HTE falls back to 'realtime' with a WARN if unavailable.
+  - The PPS line can't use HTE (only the always-on GPIO controller supports it); REALTIME is fine for C2.
 """
 
 import datetime
@@ -53,6 +141,67 @@ from sensor_msgs.msg import TimeReference
 from std_msgs.msg import Header
 from std_srvs.srv import Trigger
 from tartanstar_msgs.msg import TeensyPtpStatus
+
+
+class _HteClock:
+    """Converts Tegra HTE stamps to CLOCK_REALTIME, per edge.
+
+    HTE stamps are the ARM system counter (31.25 MHz on Orin, 32 ns ticks) in ns since the counter started,
+    which is MONOTONIC_RAW + a constant offset (the counter runs before Linux starts its clocks). The offset
+    is measured from the counter itself (CNTVCT_EL0, readable from user space on arm64). REALTIME - MONOTONIC_RAW
+    is read fresh for every batch of edges, because chrony keeps a rate correction on REALTIME even when offline
+    (a one-time offset drifted by up to 36 ms per session in the old node).
+    """
+
+    def __init__(self):
+        import ctypes
+        import mmap
+        import platform
+        if platform.machine() != 'aarch64':
+            raise RuntimeError('HTE conversion needs the arm64 system counter')
+        # Two tiny functions: mrs x0, cntvct_el0 / cntfrq_el0 ; ret
+        self._bufs = []
+        def fn(mrs):
+            buf = mmap.mmap(-1, mmap.PAGESIZE, prot=mmap.PROT_READ | mmap.PROT_WRITE | mmap.PROT_EXEC)
+            buf.write(mrs.to_bytes(4, 'little') + (0xd65f03c0).to_bytes(4, 'little'))
+            self._bufs.append(buf)
+            return ctypes.CFUNCTYPE(ctypes.c_uint64)(ctypes.addressof(ctypes.c_char.from_buffer(buf)))
+        self._cntvct = fn(0xd53be040)
+        freq = fn(0xd53be000)()
+        if freq <= 0 or NS % freq:
+            raise RuntimeError(f'counter frequency {freq} Hz is not a whole number of ns per tick')
+        self._ns_per_tick = NS // freq
+        self.counter_minus_raw_ns = self.measure_offset()
+
+    def measure_offset(self, n: int = 200) -> int:
+        """Counter (ns) - MONOTONIC_RAW, median of the tightest reads (sub-µs)."""
+        offs = []
+        for _ in range(n):
+            a = time.clock_gettime_ns(time.CLOCK_MONOTONIC_RAW)
+            c = self._cntvct()
+            b = time.clock_gettime_ns(time.CLOCK_MONOTONIC_RAW)
+            if b - a < 20_000:
+                offs.append(c * self._ns_per_tick - (a + b) // 2)
+        if len(offs) < n // 4:
+            raise RuntimeError('could not read the counter and MONOTONIC_RAW close together')
+        offs.sort()
+        return offs[len(offs) // 2]
+
+    def to_realtime_ns(self) -> int:
+        """Offset to add to an HTE stamp: REALTIME - MONOTONIC_RAW - (counter - MONOTONIC_RAW).
+
+        The clock pair is read up to 3 times and the tightest read is used (a read interrupted between the two
+        clocks would add its delay to every stamp of the batch)."""
+        best = None
+        for _ in range(3):
+            r1 = time.clock_gettime_ns(time.CLOCK_REALTIME)
+            mr = time.clock_gettime_ns(time.CLOCK_MONOTONIC_RAW)
+            r2 = time.clock_gettime_ns(time.CLOCK_REALTIME)
+            if best is None or r2 - r1 < best[0]:
+                best = (r2 - r1, (r1 + r2) // 2 - mr)
+            if best[0] < 5_000:
+                break
+        return best[1] - self.counter_minus_raw_ns
 
 MARKER_LEN = 13  # bits in SYNC_START / SYNC_STOP pattern
 NS = 1_000_000_000
@@ -84,7 +233,8 @@ class TeensyCombinedNode(Node):
         self.declare_parameter('trigger_gpio_line',       8)
         self.declare_parameter('trigger_frame_id',        'teensy_trigger')
         self.declare_parameter('debounce_time_us',        0)
-        self.declare_parameter('pps_gpio_chip',           '/dev/gpiochip0')
+        self.declare_parameter('trigger_event_clock',     'hte')  # 'hte' (converted per edge) or 'realtime'
+        self.declare_parameter('pps_gpio_chip',          '/dev/gpiochip0')
         self.declare_parameter('pps_gpio_line',           96)
         self.declare_parameter('pps_frame_id',            'gq7_pps')
         self.declare_parameter('pps_debounce_time_us',    0)
@@ -107,6 +257,8 @@ class TeensyCombinedNode(Node):
         self.trigger_gpio_line    = p('trigger_gpio_line').value
         self.trigger_frame_id     = p('trigger_frame_id').value
         self.debounce_time_us     = p('debounce_time_us').value
+        self.trigger_event_clock  = p('trigger_event_clock').value
+        self._hte = None   # _HteClock when the trigger line is stamped by HTE
         self.pps_gpio_chip        = p('pps_gpio_chip').value
         self.pps_gpio_line        = p('pps_gpio_line').value
         self.pps_frame_id         = p('pps_frame_id').value
@@ -643,14 +795,36 @@ class TeensyCombinedNode(Node):
     def _init_trigger_gpio(self) -> bool:
         # Edge.BOTH, keep rising events: with Edge.RISING alone the Tegra GPIO driver reports many falling
         # edges as rising (~48/s instead of 30). A debounce > 0 uses the Tegra hardware debounce, which works
-        # in whole milliseconds and puts every stamp on a 1 ms grid (GQ7_TIMESTAMP_DRIFT_v2.md, F6).
+        # in whole milliseconds and puts every stamp on a 1 ms grid.
+        # HTE stamps the edge in hardware (no interrupt-latency jitter: ~1 µs vs ~40-100 µs std with REALTIME)
+        # and is converted to REALTIME per edge (_HteClock). Falls back to REALTIME if HTE or the counter read
+        # isn't available. HTE reports some spurious falling edges; only rising edges are used.
         if self.debounce_time_us > 0:
             self.get_logger().warn(f'Trigger debounce {self.debounce_time_us} us: Tegra debounces in 1 ms steps, '
                                    'trigger stamps will be quantized to 1 ms. Use 0.')
+        debounce = datetime.timedelta(microseconds=self.debounce_time_us)
+        if self.trigger_event_clock == 'hte':
+            try:
+                hte = _HteClock()
+                settings = gpiod.LineSettings(
+                    direction=Direction.INPUT, edge_detection=Edge.BOTH, event_clock=Clock.HTE,
+                    debounce_period=debounce)
+                self.trigger_gpio_req = gpiod.request_lines(
+                    path=self.trigger_gpio_chip, consumer='teensy-combined-trigger',
+                    config={self.trigger_gpio_line: settings})
+                self._hte = hte
+                self.get_logger().info(
+                    'Trigger GPIO clock: HTE, converted to REALTIME per edge (both edges, rising kept; '
+                    f'counter - MONOTONIC_RAW = {hte.counter_minus_raw_ns / 1e6:.3f} ms)')
+                return True
+            except Exception as e:
+                self.get_logger().warn(f'Trigger HTE unavailable ({e}); using REALTIME stamps')
+        elif self.trigger_event_clock != 'realtime':
+            self.get_logger().warn(f'Unknown trigger_event_clock {self.trigger_event_clock!r}; using REALTIME')
         try:
             settings = gpiod.LineSettings(
                 direction=Direction.INPUT, edge_detection=Edge.BOTH, event_clock=Clock.REALTIME,
-                debounce_period=datetime.timedelta(microseconds=self.debounce_time_us))
+                debounce_period=debounce)
             self.trigger_gpio_req = gpiod.request_lines(
                 path=self.trigger_gpio_chip, consumer='teensy-combined-trigger',
                 config={self.trigger_gpio_line: settings})
@@ -672,6 +846,9 @@ class TeensyCombinedNode(Node):
 
         timeout_count = 0
         rising = gpiod.EdgeEvent.Type.RISING_EDGE
+        hte = self._hte
+        next_offset_check = time.monotonic() + 60.0
+        bad_stamp_warned = False
 
         try:
             while True:
@@ -693,11 +870,33 @@ class TeensyCombinedNode(Node):
                     continue
                 timeout_count = 0
 
+                to_rt = 0
+                if hte is not None:
+                    to_rt = hte.to_realtime_ns()
+                    if time.monotonic() > next_offset_check:
+                        # counter - MONOTONIC_RAW is constant; re-check it once a minute
+                        next_offset_check = time.monotonic() + 60.0
+                        old = hte.counter_minus_raw_ns
+                        try:
+                            new = hte.measure_offset()
+                            if abs(new - old) > 2_000:
+                                self.get_logger().warn(f'HTE counter offset changed by {(new - old) / 1e3:.1f} us')
+                                hte.counter_minus_raw_ns = new
+                        except RuntimeError as e:
+                            self.get_logger().warn(f'HTE counter offset re-check failed: {e}')
+
                 for event in events:
                     if event.event_type != rising:
                         continue
+                    stamp_ns = event.timestamp_ns + to_rt   # CLOCK_REALTIME
+                    if hte is not None and not bad_stamp_warned:
+                        age = time.clock_gettime_ns(time.CLOCK_REALTIME) - stamp_ns
+                        if not 0 <= age < NS:
+                            bad_stamp_warned = True
+                            self.get_logger().warn(f'HTE trigger stamp {age / 1e6:.3f} ms before now '
+                                                   '(expected 0-1000 ms); check the HTE conversion')
                     hdr = Header()
-                    hdr.stamp    = Time(nanoseconds=event.timestamp_ns).to_msg()   # CLOCK_REALTIME
+                    hdr.stamp    = Time(nanoseconds=stamp_ns).to_msg()
                     hdr.frame_id = self.trigger_frame_id
                     if self.timestamp_pub.get_subscription_count() > 0:
                         self.timestamp_pub.publish(hdr)
